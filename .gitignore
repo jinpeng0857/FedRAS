@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+results/
+data/
+*.pt
+*.pth
+*.log
+wandb/
+.DS_Store
