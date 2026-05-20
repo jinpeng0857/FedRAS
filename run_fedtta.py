@@ -59,46 +59,109 @@ from utils.utils import set_seed, load_checkpoint_weights
 
 
 def run_source_only(target_clients, model, device):
-    """Baseline: No adaptation. Evaluate all target clients directly."""
+    """
+    Baseline: No adaptation. Evaluate all target clients via TWO protocols.
+
+    1. source_only_running_stats: model.eval(), BN uses running stats (traditional).
+    2. source_only_batchstats:   BN.train() + save/restore, BN uses batch stats.
+       This is the correct baseline for comparing adapt_lr=0 / adapt_steps=0.
+    """
     logger.info("=" * 60)
-    logger.info("Baseline: Source-Only (no adaptation)")
+    logger.info("Baseline: Source-Only (two BN protocols)")
     logger.info("=" * 60)
 
-    model = copy.deepcopy(model).to(device)
-    model.eval()
+    source_model = copy.deepcopy(model).to(device)
 
-    per_client = []
-    domain_data = defaultdict(list)
+    # ─── Helper: batch-stats forward on a single client's data ───
+    def _batchstats_eval(bs_model, loader):
+        bn_saved = {}
+        for nm, md in bs_model.named_modules():
+            if isinstance(md, (nn.BatchNorm1d, nn.BatchNorm2d)):
+                bn_saved[nm] = (md.running_mean.data.clone(), md.running_var.data.clone())
+        bs_model.eval()
+        for md in bs_model.modules():
+            if isinstance(md, (nn.BatchNorm1d, nn.BatchNorm2d)):
+                md.train()
+        logits_list, labels_list = [], []
+        with torch.no_grad():
+            for x, y in loader:
+                x, y = x.to(device), y.to(device)
+                out = bs_model(x)
+                log = out["logit"] if isinstance(out, dict) else out
+                logits_list.append(log.cpu())
+                labels_list.append(y.cpu())
+        for nm, md in bs_model.named_modules():
+            if isinstance(md, (nn.BatchNorm1d, nn.BatchNorm2d)) and nm in bn_saved:
+                md.running_mean.data.copy_(bn_saved[nm][0])
+                md.running_var.data.copy_(bn_saved[nm][1])
+        all_log = torch.cat(logits_list, dim=0)
+        all_lbl = torch.cat(labels_list, dim=0)
+        probs = F.softmax(all_log, dim=1)
+        return compute_accuracy(all_log, all_lbl), compute_ece(probs, all_lbl)
+
+    # ─── Protocol A: BN running stats (traditional model.eval()) ───
+    logger.info("--- Source-Only (running-stats) ---")
+    rs_per_client, rs_domain = [], defaultdict(list)
+    rs_model = copy.deepcopy(source_model).to(device)
+    rs_model.eval()
 
     for client in target_clients:
         all_logits, all_labels = [], []
         with torch.no_grad():
             for x, y in client["test_loader"]:
                 x, y = x.to(device), y.to(device)
-                out = model(x)
+                out = rs_model(x)
                 logits = out["logit"] if isinstance(out, dict) else out
                 all_logits.append(logits.cpu())
                 all_labels.append(y.cpu())
-
         all_logits = torch.cat(all_logits)
         all_labels = torch.cat(all_labels)
         probs = F.softmax(all_logits, dim=1)
         acc = compute_accuracy(all_logits, all_labels)
         ece_val = compute_ece(probs, all_labels)
-        per_client.append((client["client_id"], client["domain_id"], acc, ece_val))
-        domain_data[client["domain_id"]].append((acc, ece_val))
+        rs_per_client.append((client["client_id"], client["domain_id"], acc, ece_val))
+        rs_domain[client["domain_id"]].append((acc, ece_val))
 
-    # Log per-domain
-    for d_id, vals in sorted(domain_data.items()):
+    for d_id, vals in sorted(rs_domain.items()):
         d_acc = np.mean([v[0] for v in vals])
         d_ece = np.mean([v[1] for v in vals])
         corr = target_clients[[c["domain_id"] for c in target_clients].index(d_id)]["corruption"]
         logger.info(f"  Domain {d_id} ({corr}): Acc={d_acc:.2%} ECE={d_ece:.2%}")
+    rs_avg_acc = np.mean([v[2] for v in rs_per_client])
+    rs_avg_ece = np.mean([v[3] for v in rs_per_client])
+    logger.info(f"  => Source-only (running-stats) Avg Acc={rs_avg_acc:.2%} Avg ECE={rs_avg_ece:.2%}")
 
-    avg_acc = np.mean([v[2] for v in per_client])
-    avg_ece = np.mean([v[3] for v in per_client])
-    logger.info(f"  Source-Only Avg Acc={avg_acc:.2%} Avg ECE={avg_ece:.2%}")
-    return {"avg_acc": avg_acc, "avg_ece": avg_ece}
+    # ─── Protocol B: BN batch statistics ───
+    logger.info("--- Source-Only (batch-stats) ---")
+    bs_per_client, bs_domain = [], defaultdict(list)
+
+    for client in target_clients:
+        acc, ece_val = _batchstats_eval(copy.deepcopy(source_model), client["test_loader"])
+        bs_per_client.append((client["client_id"], client["domain_id"], acc, ece_val))
+        bs_domain[client["domain_id"]].append((acc, ece_val))
+
+    for d_id, vals in sorted(bs_domain.items()):
+        d_acc = np.mean([v[0] for v in vals])
+        d_ece = np.mean([v[1] for v in vals])
+        corr = target_clients[[c["domain_id"] for c in target_clients].index(d_id)]["corruption"]
+        logger.info(f"  Domain {d_id} ({corr}): Acc={d_acc:.2%} ECE={d_ece:.2%}")
+    bs_avg_acc = np.mean([v[2] for v in bs_per_client])
+    bs_avg_ece = np.mean([v[3] for v in bs_per_client])
+    logger.info(f"  => Source-only (batch-stats) Avg Acc={bs_avg_acc:.2%} Avg ECE={bs_avg_ece:.2%}")
+
+    # ─── Summary ───
+    logger.info("=" * 60)
+    logger.info(f"  Source-only running-stats: Acc={rs_avg_acc:.2%} ECE={rs_avg_ece:.2%}")
+    logger.info(f"  Source-only batch-stats:   Acc={bs_avg_acc:.2%} ECE={bs_avg_ece:.2%}")
+    logger.info(f"  NOTE: adapt_lr=0 / adapt_steps=0 should match batch-stats baseline.")
+    logger.info("=" * 60)
+
+    return {
+        "avg_acc": rs_avg_acc,
+        "avg_ece": rs_avg_ece,
+        "batch_stats_acc": bs_avg_acc,
+        "batch_stats_ece": bs_avg_ece,
+    }
 
 
 def run_local_tent(target_clients, base_model, device, configs):
@@ -860,6 +923,17 @@ def run():
     fisher_values = None
     if configs.fisher_path and os.path.exists(configs.fisher_path):
         fisher_values = torch.load(configs.fisher_path, map_location="cpu")
+        # Diagnostic: check Fisher keys vs model param names
+        if isinstance(fisher_values, dict):
+            model_param_names = {n for n, _ in model.named_parameters()}
+            fisher_keys = set(fisher_values.keys())
+            matched = fisher_keys & model_param_names
+            if len(matched) < len(fisher_keys):
+                missing = fisher_keys - model_param_names
+                logger.warning(f"  Fisher key mismatch: {len(missing)} keys not in model")
+                logger.warning(f"  Missing keys (first 10): {sorted(missing)[:10]}")
+            nonzero = sum(v.count_nonzero().item() for v in fisher_values.values())
+            logger.info(f"  Loaded Fisher: {len(fisher_values)} params, {nonzero} nonzero entries")
 
     # ---- Build target clients ----
     if configs.corruption is not None:
@@ -889,7 +963,9 @@ def run():
 
     # ---- Dispatch to selected TTA mode ----
     if configs.tta_mode == "source_only":
-        result = run_source_only(target_clients, model, device)
+        result = run_source_only(target_clients, model, device)  # kept for backward compat
+        if result and "batch_stats_acc" in result:
+            logger.info(f"  batch-stats Acc/ECE: {result['batch_stats_acc']:.2%} / {result['batch_stats_ece']:.2%}")
 
     elif configs.tta_mode == "local_tent":
         result = run_local_tent(target_clients, model, device, configs)

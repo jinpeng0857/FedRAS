@@ -197,10 +197,12 @@ class FedTTAServer:
             exp_scores = np.exp(shifted)
             softmax_weights = exp_scores / (exp_scores.sum() + 1e-8)
 
-            # Optionally weight by num_samples
+            # Optionally weight by num_samples, then re-normalize to sum=1
             if weight_by_num_samples:
-                num_samples_arr = np.array([r["num_samples"] for r in reports])
-                agg_weights = (softmax_weights * num_samples_arr).tolist()
+                num_samples_arr = np.array([r["num_samples"] for r in reports], dtype=np.float64)
+                agg_weights = softmax_weights * num_samples_arr
+                agg_weights = agg_weights / (agg_weights.sum() + 1e-8)
+                agg_weights = agg_weights.tolist()
             else:
                 agg_weights = softmax_weights.tolist()
 

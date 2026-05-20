@@ -18,11 +18,11 @@ echo "========================================="
 echo "[1/4] FedACG training..."
 python train_fedacg.py --method fedacg --fedacg_mode fedacg \
     --dataset cifar100 --alpha 0.3 --num_client 100 \
-    --backbone eatac_resnet18 --subnet_drop_rate 0.2 \
+    --backbone eatac_resnet34 --subnet_drop_rate 0.2 \
     --subnet_train_prob 0.3 \
-    --global_rounds 600 --local_epochs 2 --learning_rate 0.1 \
-    --momentum 0.9 --weight_decay 5e-4 --join_ratio 0.2 \
-    --batch_size 64 --task_name run1
+    --global_rounds 600 --local_epochs 2 --learning_rate 0.08 \
+    --momentum 0.9 --weight_decay 5e-4 --join_ratio 0.15 \
+    --batch_size 64 --task_name run2
 
 
 python train_fedacg.py --method fedacg --fedacg_mode fedacg \

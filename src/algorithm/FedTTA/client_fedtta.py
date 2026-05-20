@@ -175,7 +175,29 @@ class FedTTAClient:
         """
         self._reset_model()
         self._load_adapt_state(adapt_state)
+        return self._evaluate_batchstats(test_loader)
 
+    def evaluate_source_batchstats(self, test_loader) -> Dict:
+        """
+        Evaluate source model with BN batch statistics (no TTA, no adapter).
+
+        Serves as the correct baseline for comparing adapt_lr=0 / adapt_steps=0.
+        Unlike the original source_only (which uses BN running stats), this
+        matches the BN protocol used by evaluate_with_adapt_state().
+
+        Returns:
+            dict with keys: accuracy, ece, num_samples
+        """
+        self._reset_model()
+        return self._evaluate_batchstats(test_loader)
+
+    def _evaluate_batchstats(self, test_loader) -> Dict:
+        """
+        Shared helper: reset → BN save → model.eval() + BN.train() → no_grad forward → BN restore.
+
+        Not intended for direct external use; use evaluate_with_adapt_state()
+        or evaluate_source_batchstats() instead.
+        """
         # Save BN running stats before any forward pass
         bn_saved = {}
         for name, m in self.model.named_modules():

@@ -110,6 +110,9 @@ parser.add_argument("--episodic", action="store_true", default=False,
 parser.add_argument("--model_path", type=str, default=None)
 parser.add_argument("--fisher_path", type=str, default=None)
 parser.add_argument("--num_fisher_samples", type=int, default=2000)
+parser.add_argument("--fisher_data_split", type=str, default="train",
+                    choices=["train", "test"],
+                    help="Data split for Fisher computation. Default=train avoids test leakage.")
 parser.add_argument("--severity", type=int, default=5)
 parser.add_argument("--precomputed_c_path", type=str, default=None,
                     help="Path to pre-computed CIFAR-C/ImageNet-C dataset dir, e.g. ./data/CIFAR-10-C. "
