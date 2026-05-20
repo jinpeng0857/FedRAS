@@ -157,14 +157,18 @@ class FedTTAClient:
         """
         Evaluate with a given adapter state WITHOUT doing any TTA.
 
+        BN uses batch statistics (to match adapted affine params) but running
+        stats are saved BEFORE forward and restored AFTER forward, so there is
+        zero net change to any model state.
+
         Steps:
           1. Reset to source model
           2. Load server adapter
-          3. model.eval(), no_grad pure forward
-          4. No optimizer, no TTA, no parameter modification
-
-        This is the paper's primary evaluation protocol.
-        Online stats from run_local_eatac_tta() are kept for debugging.
+          3. Save BN running_mean/running_var
+          4. model.eval() for dropout disable, BN.train() for batch stats
+          5. torch.no_grad() pure forward
+          6. Restore BN running_mean/running_var
+          7. No optimizer, no TTA, no parameter modification
 
         Returns:
             dict with keys: accuracy, ece, num_samples
@@ -172,9 +176,14 @@ class FedTTAClient:
         self._reset_model()
         self._load_adapt_state(adapt_state)
 
-        # BN needs batch statistics because running stats from source don't
-        # match the adapted affine params. Use train() for BN (batch stats)
-        # but keep eval() for everything else (no dropout).
+        # Save BN running stats before any forward pass
+        bn_saved = {}
+        for name, m in self.model.named_modules():
+            if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d)):
+                bn_saved[name] = (m.running_mean.data.clone(), m.running_var.data.clone())
+
+        # model.eval() disables dropout; BN.train() uses batch statistics
+        # (matching adapted affine params for correct calibration)
         self.model.eval()
         for m in self.model.modules():
             if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d)):
@@ -188,6 +197,12 @@ class FedTTAClient:
                 logits = result["logit"] if isinstance(result, dict) else result
                 all_logits.append(logits.cpu())
                 all_labels.append(y.cpu())
+
+        # Restore BN running stats (undo any updates from train-mode forward)
+        for name, m in self.model.named_modules():
+            if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d)) and name in bn_saved:
+                m.running_mean.data.copy_(bn_saved[name][0])
+                m.running_var.data.copy_(bn_saved[name][1])
 
         all_logits = torch.cat(all_logits, dim=0)
         all_labels = torch.cat(all_labels, dim=0)
@@ -252,6 +267,10 @@ class FedTTAClient:
         total_selected = 0
         total_entropy_pass = 0
         total_consistency_loss = 0.0
+        total_minmax_entropy_loss = 0.0
+        total_fisher_loss = 0.0
+        total_prox_loss = 0.0
+        total_loss_val = 0.0
         total_disagreement = 0.0
         total_entropy_values = 0.0
         total_confidence = 0.0
@@ -316,6 +335,7 @@ class FedTTAClient:
                     )
                     loss_ent = min_max_entropy_regularization(sub_logits, conf_signs)
                     total_disagreement += (conf_signs < 0).float().mean().item()
+                    total_minmax_entropy_loss += loss_ent.item()
 
                     loss = (
                         getattr(self.configs, "consistency_weight", 1.0) * loss_c
@@ -330,6 +350,7 @@ class FedTTAClient:
                             self.model, self.original_params, self.fisher_values
                         )
                         loss = loss + getattr(self.configs, "fisher_alpha", 50.0) * loss_fisher
+                        total_fisher_loss += loss_fisher.item()
 
                     # Proximal to accelerated state (FedACG-style) — WITH gradients
                     if gamma_prox > 0:
@@ -344,6 +365,9 @@ class FedTTAClient:
                         if prox_numel > 0:
                             prox_loss = prox_loss / prox_numel
                             loss = loss + gamma_prox * prox_loss
+                            total_prox_loss += prox_loss.item()
+
+                    total_loss_val += loss.item()
 
                     self.optimizer.zero_grad()
                     loss.backward()
@@ -421,6 +445,11 @@ class FedTTAClient:
                 "mean_entropy": avg_entropy,
                 "mean_disagreement": avg_disagreement,
                 "mean_consistency_loss": avg_consistency,
+                "total_consistency_loss": total_consistency_loss,
+                "total_minmax_entropy_loss": total_minmax_entropy_loss,
+                "total_fisher_loss": total_fisher_loss,
+                "total_prox_loss": total_prox_loss,
+                "total_loss": total_loss_val,
                 "mean_confidence": mean_confidence,
                 "mean_entropy_norm": entropy_norm,
                 "collapse_score": collapse_score,

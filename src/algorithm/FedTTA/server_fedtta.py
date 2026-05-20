@@ -283,6 +283,11 @@ class FedTTAServer:
         avg_entropy = sum(r["stats"]["mean_entropy"] * r["num_samples"] for r in round_stats) / total_samples
         avg_disagreement = sum(r["stats"]["mean_disagreement"] * r["num_samples"] for r in round_stats) / total_samples
         avg_consistency = sum(r["stats"]["mean_consistency_loss"] * r["num_samples"] for r in round_stats) / total_samples
+        avg_total_consistency = sum(r["stats"].get("total_consistency_loss", 0) for r in round_stats) / max(total_backwards, 1)
+        avg_total_minmax = sum(r["stats"].get("total_minmax_entropy_loss", 0) for r in round_stats) / max(total_backwards, 1)
+        avg_total_fisher = sum(r["stats"].get("total_fisher_loss", 0) for r in round_stats) / max(total_backwards, 1)
+        avg_total_prox = sum(r["stats"].get("total_prox_loss", 0) for r in round_stats) / max(total_backwards, 1)
+        avg_total_loss = sum(r["stats"].get("total_loss", 0) for r in round_stats) / max(total_backwards, 1)
         avg_confidence = sum(r["stats"]["mean_confidence"] * r["num_samples"] for r in round_stats) / total_samples
         avg_entropy_norm = sum(r["stats"]["mean_entropy_norm"] * r["num_samples"] for r in round_stats) / total_samples
         avg_collapse = sum(r["stats"]["collapse_score"] * r["num_samples"] for r in round_stats) / total_samples
@@ -304,6 +309,11 @@ class FedTTAServer:
             "avg_entropy": avg_entropy,
             "avg_disagreement": avg_disagreement,
             "avg_consistency_loss": avg_consistency,
+            "avg_total_consistency_loss": avg_total_consistency,
+            "avg_total_minmax_loss": avg_total_minmax,
+            "avg_total_fisher_loss": avg_total_fisher,
+            "avg_total_prox_loss": avg_total_prox,
+            "avg_total_loss": avg_total_loss,
             "avg_confidence": avg_confidence,
             "avg_entropy_norm": avg_entropy_norm,
             "avg_collapse": avg_collapse,

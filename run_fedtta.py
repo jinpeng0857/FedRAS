@@ -249,22 +249,51 @@ def run_local_eata_c(target_clients, base_model, device, configs, fisher_values=
     logger.info("=" * 60)
 
     from src.algorithm.EATA_C.eata_c_test import EATACTester
+    from src.algorithm.FedTTA import extract_adapt_state, load_adapt_state, compute_accuracy, compute_ece
 
-    all_accs, all_eces = [], []
+    online_accs, online_eces = [], []
+    adapter_accs, adapter_eces = [], []
     for client in target_clients:
         model = copy.deepcopy(base_model)
         tester = EATACTester(model, configs, device, fisher_path=None)
         if fisher_values is not None:
             tester.fisher_values = fisher_values
 
+        # === TTA phase (online accuracy) ===
         result = tester.evaluate(client["test_loader"])
-        all_accs.append(result["accuracy"])
-        all_eces.append(result["ece"])
+        online_accs.append(result["accuracy"])
+        online_eces.append(result["ece"])
 
-    avg_acc = np.mean(all_accs)
-    avg_ece = np.mean(all_eces)
-    logger.info(f"  Local EATA-C Avg Acc={avg_acc:.2%} ECE={avg_ece:.2%}")
-    return {"avg_acc": avg_acc, "avg_ece": avg_ece}
+        # === Adapter evaluation phase (pure forward, no TTA) ===
+        # Save adapted state, reset to source, load adapted state, pure forward
+        adapted_state = extract_adapt_state(tester.model)
+        tester._reset_model()
+        load_adapt_state(tester.model, adapted_state)
+        tester.model.eval()
+
+        all_logits, all_labels = [], []
+        with torch.no_grad():
+            for x, y in client["test_loader"]:
+                x, y = x.to(device), y.to(device)
+                out = tester.model(x)
+                logits = out["logit"] if isinstance(out, dict) else out
+                all_logits.append(logits.cpu())
+                all_labels.append(y.cpu())
+        all_logits = torch.cat(all_logits, dim=0)
+        all_labels = torch.cat(all_labels, dim=0)
+        adapter_acc = compute_accuracy(all_logits, all_labels)
+        adapter_ece = compute_ece(F.softmax(all_logits, dim=1), all_labels)
+        adapter_accs.append(adapter_acc)
+        adapter_eces.append(adapter_ece)
+
+    avg_online_acc = np.mean(online_accs)
+    avg_online_ece = np.mean(online_eces)
+    avg_adapter_acc = np.mean(adapter_accs)
+    avg_adapter_ece = np.mean(adapter_eces)
+    logger.info(f"  Local EATA-C Online  Acc={avg_online_acc:.2%} ECE={avg_online_ece:.2%}")
+    logger.info(f"  Local EATA-C Adapter Acc={avg_adapter_acc:.2%} ECE={avg_adapter_ece:.2%}")
+    return {"avg_acc": avg_adapter_acc, "avg_ece": avg_adapter_ece,
+            "online_acc": avg_online_acc, "online_ece": avg_online_ece}
 
 
 # ========== Naive FedTTA Baselines (single shared adapter, no domain isolation) ==========
@@ -477,6 +506,11 @@ def run_domain_fedtta(
         collapse = round_result.get('avg_collapse', 0)
         delta_n = round_result.get('avg_delta_norm', 0)
         comm_b = round_result.get('communication_bytes', 0)
+        l_cons = round_result.get('avg_total_consistency_loss', 0)
+        l_minmax = round_result.get('avg_total_minmax_loss', 0)
+        l_fisher = round_result.get('avg_total_fisher_loss', 0)
+        l_prox = round_result.get('avg_total_prox_loss', 0)
+        l_total = round_result.get('avg_total_loss', 0)
         logger.info(f"  Round {round_idx}: "
                     f"Acc={round_result['avg_acc']:.2%} "
                     f"ECE={round_result['avg_ece']:.2%} "
@@ -484,6 +518,9 @@ def run_domain_fedtta(
                     f"Rel={reliability_raw:.3f} "
                     f"Col={collapse:.3f} "
                     f"dN={delta_n:.4f} "
+                    f"Lc={l_cons:.4f} Lm={l_minmax:.4f} "
+                    f"Lf={l_fisher:.4f} Lp={l_prox:.4f} "
+                    f"Lt={l_total:.4f} "
                     f"BW={round_result['num_backwards']} "
                     f"Comm={comm_b:,}B "
                     f"({elapsed:.1f}s)")
@@ -497,6 +534,23 @@ def run_domain_fedtta(
             client_round_metrics_list.append(client_entry)
 
         for d_id, dm in round_result["domain_metrics"].items():
+            # Log reliability weight distribution for this domain
+            raw_scores = dm.get("raw_scores", [])
+            agg_weights = dm.get("agg_weights", [])
+            if raw_scores and agg_weights:
+                n_clients = len(raw_scores)
+                if n_clients > 1:
+                    w_max = max(agg_weights)
+                    w_min = min(agg_weights)
+                    w_ratio = w_max / max(w_min, 1e-8)
+                    w_entropy_val = -sum(w * np.log(max(w, 1e-15)) for w in agg_weights) / max(np.log(n_clients), 1e-8)
+                    logger.info(f"    Domain {d_id} ({dm['corruption']}): "
+                                f"weights range=[{w_min:.3f}, {w_max:.3f}] "
+                                f"ratio={w_ratio:.1f}x "
+                                f"norm_entropy={w_entropy_val:.3f}")
+                else:
+                    logger.info(f"    Domain {d_id} ({dm['corruption']}): single client, weight=1.0")
+
             domain_metrics_list.append({
                 "round": round_idx, "domain_id": d_id,
                 "corruption": dm["corruption"], "domain_acc": dm["domain_acc"],
@@ -508,8 +562,8 @@ def run_domain_fedtta(
                 "avg_collapse": dm.get("avg_collapse", 0),
                 "avg_reliability_raw": dm.get("avg_reliability_raw", 0),
                 "avg_delta_norm": dm.get("avg_delta_norm", 0),
-                "raw_scores": dm.get("raw_scores", []),
-                "agg_weights": dm.get("agg_weights", []),
+                "raw_scores": raw_scores,
+                "agg_weights": agg_weights,
             })
 
     # Final evaluation on ALL clients (using evaluate_with_adapt_state, NO TTA)
