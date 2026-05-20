@@ -50,30 +50,6 @@ def prepare_server_and_clients(configs):
     else:
         raise ValueError(f"Unknown method: {configs.method}")
 
-
-def compute_ece(probs, labels, n_bins=15):
-    """Compute Expected Calibration Error."""
-    confidences, predictions = probs.max(dim=1)
-    correct = (predictions == labels).float()
-    bin_boundaries = torch.linspace(0, 1, n_bins + 1)
-    ece = 0.0
-    for i in range(n_bins):
-        in_bin = (confidences > bin_boundaries[i]) & (
-            confidences <= bin_boundaries[i + 1]
-        )
-        prop = in_bin.float().mean()
-        if prop > 0:
-            acc_bin = correct[in_bin].mean()
-            conf_bin = confidences[in_bin].mean()
-            ece += torch.abs(acc_bin - conf_bin) * prop
-    return ece.item()
-
-
-def compute_accuracy(logits, labels):
-    pred = logits.argmax(dim=1)
-    return (pred == labels).float().mean().item()
-
-
 def load_checkpoint_weights(model, model_path, device="cpu"):
     """
     Universal checkpoint loader. Compatible with:

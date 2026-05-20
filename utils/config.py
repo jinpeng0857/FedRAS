@@ -24,7 +24,8 @@ parser.add_argument("--fedacg_mode", type=str, default="fedacg",
 
 # ========== Model ==========
 parser.add_argument("--backbone", type=str, default="eatac_resnet18",
-                    choices=["resnet18", "eatac_resnet18", "eatac_resnet34"])
+                    choices=["resnet18", "eatac_resnet18", "eatac_resnet34",
+                             "eatac_resnet50", "eatac_resnet101"])
 parser.add_argument("--num_groups", type=int, default=32,
                     help="GroupNorm groups (only when use_bn_layer=False)")
 parser.add_argument("--use_bn_layer", action="store_true", default=True,
@@ -37,7 +38,7 @@ parser.add_argument("--pretrained", action="store_true", default=False)
 
 # ========== Dataset ==========
 parser.add_argument("--dataset", type=str, default="cifar10",
-                    choices=["cifar10", "cifar100", "cinic", "tinyimagenet"])
+                    choices=["cifar10", "cifar100", "cinic", "imagenet"])
 parser.add_argument("--dataset_path", type=str, default=None,
                     help="Override default dataset path")
 parser.add_argument("--num_client", type=int, default=100)

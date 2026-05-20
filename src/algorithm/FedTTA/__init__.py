@@ -13,7 +13,7 @@ from .adapter_utils import (
 )
 from .client_fedtta import FedTTAClient
 from .server_fedtta import FedTTAServer
-from .metrics import (
+from utils.metrics import (
     compute_accuracy,
     compute_ece,
     compute_nll,

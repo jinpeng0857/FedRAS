@@ -12,7 +12,7 @@ Public API:
                     load_clean_test, load_corrupted_test
   Partitioning:     dirichlet_partition
   Transforms:       get_transform
-  Constants:        DATASET_PATHS, DATASET_CONFIGS, CIFAR_CORRUPTIONS
+  Constants:        DATASET_PATHS, DATASET_CONFIGS, STANDARD_CORRUPTIONS
 """
 
 import io
@@ -35,7 +35,13 @@ DATASET_PATHS = {
     "cifar10": os.path.join(_DATA_ROOT, "cifar10"),
     "cifar100": os.path.join(_DATA_ROOT, "cifar100"),
     "cinic": os.path.join(_DATA_ROOT, "cinic"),
-    "tinyimagenet": os.path.join(_DATA_ROOT, "tiny-imagenet-200"),
+    "imagenet": os.path.join(_DATA_ROOT, "imagenet"),
+}
+
+# Default paths for pre-computed C (corruption) datasets
+DEFAULT_C_PATHS = {
+    "cifar10": os.path.join(_DATA_ROOT, "CIFAR-10-C"),
+    "cifar100": os.path.join(_DATA_ROOT, "CIFAR-100-C"),
     "imagenet": os.path.join(_DATA_ROOT, "ImageNet-C"),
 }
 
@@ -43,11 +49,11 @@ DATASET_CONFIGS = {
     "cifar10": {"num_classes": 10, "img_size": 32, "mean": [0.4914, 0.4822, 0.4465], "std": [0.2023, 0.1994, 0.2010]},
     "cifar100": {"num_classes": 100, "img_size": 32, "mean": [0.5071, 0.4867, 0.4408], "std": [0.2675, 0.2565, 0.2761]},
     "cinic": {"num_classes": 10, "img_size": 32, "mean": [0.47889522, 0.47227842, 0.43047404], "std": [0.24205776, 0.23828046, 0.25874835]},
-    "tinyimagenet": {"num_classes": 200, "img_size": 64, "mean": [0.4802, 0.4481, 0.3975], "std": [0.2302, 0.2265, 0.2262]},
     "imagenet": {"num_classes": 1000, "img_size": 224, "mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
 }
 
-CIFAR_CORRUPTIONS = [
+# 15 standard corruptions used by both CIFAR-C and ImageNet-C
+STANDARD_CORRUPTIONS = [
     "gaussian_noise", "shot_noise", "impulse_noise",
     "defocus_blur", "glass_blur", "motion_blur", "zoom_blur",
     "snow", "frost", "fog", "brightness", "contrast",
@@ -229,9 +235,9 @@ def load_cinic(configs):
     return client_datasets, cfg["num_classes"]
 
 
-def load_tiny_imagenet(configs):
-    """Load Tiny-ImageNet with Dirichlet partition."""
-    name = "tinyimagenet"
+def load_imagenet(configs):
+    """Load ImageNet with Dirichlet partition (class subdirectories)."""
+    name = "imagenet"
     data_path = configs.dataset_path or DATASET_PATHS[name]
     cfg = DATASET_CONFIGS[name]
 
@@ -285,6 +291,12 @@ def load_clean_test(configs):
 
 
 # ========== CIFAR-C Corruption Functions ==========
+
+
+def _severity_param(params: list, severity: int):
+    """Index into a 5-element severity parameter list (severity 1-5)."""
+    return params[min(severity, 5) - 1]
+
 
 def _clipped_zoom(img, factor):
     """Zoom into or out of an image, then resize back."""
@@ -351,20 +363,20 @@ class CIFARCorruption:
 
     @staticmethod
     def gaussian_noise(x, severity=1):
-        std = [0.04, 0.06, 0.08, 0.09, 0.10][min(severity, 5) - 1]
+        std = _severity_param([0.04, 0.06, 0.08, 0.09, 0.10], severity)
         noise = torch.randn_like(x) * std
         return torch.clamp(x + noise, 0, 1)
 
     @staticmethod
     def shot_noise(x, severity=1):
-        scale = [60, 25, 12, 5, 3][min(severity, 5) - 1]
+        scale = _severity_param([60, 25, 12, 5, 3], severity)
         x_scaled = x * scale
         noisy = torch.poisson(x_scaled) / scale
         return torch.clamp(noisy, 0, 1)
 
     @staticmethod
     def impulse_noise(x, severity=1):
-        amount = [0.01, 0.02, 0.03, 0.05, 0.07][min(severity, 5) - 1]
+        amount = _severity_param([0.01, 0.02, 0.03, 0.05, 0.07], severity)
         mask = torch.rand_like(x)
         noisy = x.clone()
         noisy[mask < amount / 2] = 1.0
@@ -373,7 +385,7 @@ class CIFARCorruption:
 
     @staticmethod
     def defocus_blur(x, severity=1):
-        radius = [1, 2, 3, 4, 6][min(severity, 5) - 1]
+        radius = _severity_param([1, 2, 3, 4, 6], severity)
         kernel_size = radius * 2 + 1
         kernel = _disk_kernel(radius)
         kernel = kernel.view(1, 1, kernel_size, kernel_size).repeat(3, 1, 1, 1)
@@ -385,10 +397,10 @@ class CIFARCorruption:
     @staticmethod
     def glass_blur(x, severity=1):
         """Glass blur: defocus blur + random pixel offsets (vectorized)."""
-        radius = [0.5, 0.5, 0.5, 0.5, 0.5][min(severity, 5) - 1]
-        sigma = [0.7, 0.9, 1.1, 1.3, 1.5][min(severity, 5) - 1]
-        max_displace = [1, 2, 3, 4, 5][min(severity, 5) - 1]
-        repeats = [1, 1, 1, 2, 2][min(severity, 5) - 1]
+        radius = _severity_param([0.5, 0.5, 0.5, 0.5, 0.5], severity)
+        sigma = _severity_param([0.7, 0.9, 1.1, 1.3, 1.5], severity)
+        max_displace = _severity_param([1, 2, 3, 4, 5], severity)
+        repeats = _severity_param([1, 1, 1, 2, 2], severity)
 
         # Defocus blur first
         kernel_size = int(2 * radius + 1)
@@ -422,7 +434,7 @@ class CIFARCorruption:
     @staticmethod
     def motion_blur(x, severity=1):
         """Motion blur using a directional line kernel."""
-        kernel_size = [7, 9, 11, 13, 15][min(severity, 5) - 1]
+        kernel_size = _severity_param([7, 9, 11, 13, 15], severity)
         angle = float(torch.empty(1).uniform_(0, 180).item())
         rad = math.radians(angle)
         kernel = torch.zeros(kernel_size, kernel_size)
@@ -444,7 +456,7 @@ class CIFARCorruption:
     @staticmethod
     def zoom_blur(x, severity=1):
         """Zoom blur: create concentric scaled versions and blend."""
-        intensities = [0.15, 0.25, 0.35, 0.45, 0.55][min(severity, 5) - 1]
+        intensities = _severity_param([0.15, 0.25, 0.35, 0.45, 0.55], severity)
         c, h, w = x.shape
         result = torch.zeros_like(x)
         num_steps = 10
@@ -457,7 +469,7 @@ class CIFARCorruption:
     @staticmethod
     def snow(x, severity=1):
         """Snow effect: add brightness + motion blur with speckle."""
-        snow_level = [0.1, 0.2, 0.3, 0.4, 0.5][min(severity, 5) - 1]
+        snow_level = _severity_param([0.1, 0.2, 0.3, 0.4, 0.5], severity)
         c, h, w = x.shape
         snow_layer = torch.rand(1, h, w, device=x.device)
         snow_layer = F.interpolate(snow_layer.unsqueeze(0), size=(h, w),
@@ -478,7 +490,7 @@ class CIFARCorruption:
     @staticmethod
     def frost(x, severity=1):
         """Frost effect: blend image with frost pattern (simulated)."""
-        intensity = [0.1, 0.2, 0.3, 0.4, 0.5][min(severity, 5) - 1]
+        intensity = _severity_param([0.1, 0.2, 0.3, 0.4, 0.5], severity)
         c, h, w = x.shape
         # Simulate frost pattern with Perlin-like noise
         frost_pattern = torch.rand(c, h, w, device=x.device)
@@ -496,7 +508,7 @@ class CIFARCorruption:
     @staticmethod
     def fog(x, severity=1):
         """Fog effect: blend with uniform haze, stronger for distant pixels."""
-        fog_level = [0.2, 0.3, 0.4, 0.5, 0.6][min(severity, 5) - 1]
+        fog_level = _severity_param([0.2, 0.3, 0.4, 0.5, 0.6], severity)
         c, h, w = x.shape
         # Create depth-like gradient fog
         fog_map = torch.ones(h, w, device=x.device)
@@ -508,19 +520,19 @@ class CIFARCorruption:
 
     @staticmethod
     def brightness(x, severity=1):
-        delta = [0.05, 0.1, 0.15, 0.2, 0.3][min(severity, 5) - 1]
+        delta = _severity_param([0.05, 0.1, 0.15, 0.2, 0.3], severity)
         return torch.clamp(x + delta, 0, 1)
 
     @staticmethod
     def contrast(x, severity=1):
-        factor = [0.85, 0.65, 0.45, 0.25, 0.1][min(severity, 5) - 1]
+        factor = _severity_param([0.85, 0.65, 0.45, 0.25, 0.1], severity)
         mean = x.mean(dim=(1, 2), keepdim=True)
         return torch.clamp(factor * (x - mean) + mean, 0, 1)
 
     @staticmethod
     def elastic_transform(x, severity=1):
         """Elastic transformation using random displacement fields."""
-        sigma = [0.2, 0.3, 0.4, 0.5, 0.6][min(severity, 5) - 1]
+        sigma = _severity_param([0.2, 0.3, 0.4, 0.5, 0.6], severity)
         c, h, w = x.shape
         # Create random displacement fields
         dx = torch.rand(1, h, w, device=x.device) * 2 - 1
@@ -536,7 +548,7 @@ class CIFARCorruption:
         dy = F.conv2d(dy.unsqueeze(0), kernel_2d.to(x.device),
                        padding=kernel_size // 2).squeeze(0)
         # Scale displacement
-        scale = [2, 4, 6, 8, 10][min(severity, 5) - 1]
+        scale = _severity_param([2, 4, 6, 8, 10], severity)
         dx, dy = dx * scale, dy * scale
         # Create sampling grid
         grid_y, grid_x = torch.meshgrid(
@@ -555,7 +567,7 @@ class CIFARCorruption:
 
     @staticmethod
     def pixelate(x, severity=1):
-        scales = [0.9, 0.7, 0.5, 0.33, 0.2][min(severity, 5) - 1]
+        scales = _severity_param([0.9, 0.7, 0.5, 0.33, 0.2], severity)
         _, h, w = x.shape
         new_h, new_w = max(1, int(h * scales)), max(1, int(w * scales))
         x_small = F.interpolate(x.unsqueeze(0), size=(new_h, new_w), mode='nearest')
@@ -564,7 +576,7 @@ class CIFARCorruption:
 
     @staticmethod
     def jpeg_compression(x, severity=1):
-        quality = [25, 18, 15, 10, 7][min(severity, 5) - 1]
+        quality = _severity_param([25, 18, 15, 10, 7], severity)
         x_np = (x.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
         img = Image.fromarray(x_np)
         buf = io.BytesIO()
@@ -679,15 +691,18 @@ def load_corrupted_test(configs, corruption_type, severity=5):
 
     Two modes:
       1) Pre-computed C (CIFAR-C / ImageNet-C): set configs.precomputed_c_path
+         or auto-resolves via DEFAULT_C_PATHS for known datasets.
          Loads from .npy files: {precomputed_c_path}/{corruption}.npy
-      2) Online corruption (fallback): applies corruption on the fly
+      2) Online corruption (fallback for CIFAR): applies corruption on the fly
     """
     name = configs.dataset
     cfg = DATASET_CONFIGS[name]
 
     # ---- Mode 1: Pre-computed C ----
     c_path = getattr(configs, "precomputed_c_path", None)
-    if c_path is not None:
+    if c_path is None:
+        c_path = DEFAULT_C_PATHS.get(name, None)
+    if c_path is not None and os.path.isdir(c_path):
         transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(cfg["mean"], cfg["std"]),
@@ -700,7 +715,7 @@ def load_corrupted_test(configs, corruption_type, severity=5):
         )
         return dataset
 
-    # ---- Mode 2: Online corruption (existing) ----
+    # ---- Mode 2: Online corruption (CIFAR only) ----
     data_path = configs.dataset_path or DATASET_PATHS[name]
     base_transform = transforms.Compose([transforms.ToTensor()])
 
@@ -715,7 +730,8 @@ def load_corrupted_test(configs, corruption_type, severity=5):
             transform=base_transform, download=True,
         )
     else:
-        raise ValueError(f"Corrupted data not supported for {name}")
+        raise ValueError(f"Online corruption not available for {name}; "
+                         f"place pre-computed C files in {DEFAULT_C_PATHS.get(name, '<C_PATH>')}")
 
     corrupt_fn = CIFARCorruption.get_fn(corruption_type)
     corrupted = CorruptedDataset(base_dataset, corrupt_fn, severity)

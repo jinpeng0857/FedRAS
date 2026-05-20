@@ -43,7 +43,7 @@ from .adapter_utils import (
     load_adapt_state,
     state_delta,
 )
-from .metrics import compute_accuracy, compute_ece
+from utils.metrics import compute_accuracy, compute_ece, compute_client_reliability
 
 
 class FedTTAClient:
@@ -367,7 +367,6 @@ class FedTTAClient:
         all_labels = torch.cat(all_labels, dim=0)
         all_probs = F.softmax(all_logits, dim=1)
 
-        from .metrics import compute_accuracy, compute_ece
         acc = compute_accuracy(all_logits, all_labels)
         ece = compute_ece(all_probs, all_labels)
 
@@ -401,7 +400,6 @@ class FedTTAClient:
         collapse_score = float(collapse_score.item())
 
         # Compute reliability raw score now so it's available for logging
-        from .metrics import compute_client_reliability
         reliability_raw = compute_client_reliability({
             "selected_ratio": avg_selected_ratio,
             "mean_confidence": mean_confidence,

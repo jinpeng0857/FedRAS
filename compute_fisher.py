@@ -19,6 +19,7 @@ from torch.utils.data import DataLoader, Subset
 
 from src.algorithm.EATA_C.fisher import compute_fisher_information
 from src.model.eatac_resnet import eatac_resnet18, eatac_resnet34
+from src.model.eatac_imagenet_resnet import eatac_resnet50, eatac_resnet101
 from dataset.dataset import load_clean_test
 from utils.config import parser
 from utils.logger import logger
@@ -61,6 +62,16 @@ def run():
         )
     elif configs.backbone == "eatac_resnet34":
         model = eatac_resnet34(
+            num_classes=configs.num_class,
+            subnet_drop_rate=configs.subnet_drop_rate,
+        )
+    elif configs.backbone == "eatac_resnet50":
+        model = eatac_resnet50(
+            num_classes=configs.num_class,
+            subnet_drop_rate=configs.subnet_drop_rate,
+        )
+    elif configs.backbone == "eatac_resnet101":
+        model = eatac_resnet101(
             num_classes=configs.num_class,
             subnet_drop_rate=configs.subnet_drop_rate,
         )

@@ -24,10 +24,11 @@ from torch.utils.data import DataLoader
 
 from src.algorithm.EATA_C.eata_c_test import EATACTester
 from src.model.eatac_resnet import eatac_resnet18, eatac_resnet34
+from src.model.eatac_imagenet_resnet import eatac_resnet50, eatac_resnet101
 from dataset.dataset import (
     load_clean_test,
     load_corrupted_test,
-    CIFAR_CORRUPTIONS,
+    STANDARD_CORRUPTIONS,
 )
 from utils.config import parser
 from utils.logger import logger
@@ -112,6 +113,16 @@ def run():
             num_classes=configs.num_class,
             subnet_drop_rate=configs.subnet_drop_rate,
         )
+    elif configs.backbone == "eatac_resnet50":
+        model = eatac_resnet50(
+            num_classes=configs.num_class,
+            subnet_drop_rate=configs.subnet_drop_rate,
+        )
+    elif configs.backbone == "eatac_resnet101":
+        model = eatac_resnet101(
+            num_classes=configs.num_class,
+            subnet_drop_rate=configs.subnet_drop_rate,
+        )
     else:
         raise ValueError(f"Unknown backbone: {configs.backbone}")
 
@@ -138,7 +149,7 @@ def run():
         all_results.append(result)
     else:
         # All 15 corruptions
-        for corruption in CIFAR_CORRUPTIONS:
+        for corruption in STANDARD_CORRUPTIONS:
             logger.info(f"Testing {corruption}...")
             result = test_single_corruption(configs, corruption, tester)
             all_results.append(result)

@@ -30,9 +30,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from dataset.dataset import (
-    CIFAR_CORRUPTIONS, DATASET_CONFIGS, load_clean_test,
+    STANDARD_CORRUPTIONS, DATASET_CONFIGS, load_clean_test,
 )
 from src.model.eatac_resnet import eatac_resnet18, eatac_resnet34
+from src.model.eatac_imagenet_resnet import eatac_resnet50, eatac_resnet101
 from src.algorithm.EATA_C.losses import prediction_agreement, min_max_entropy_regularization
 from src.algorithm.EATA_C.sample_selection import ActiveSampleSelector
 from src.algorithm.FedTTA import (
@@ -784,6 +785,16 @@ def run():
             num_classes=configs.num_class,
             subnet_drop_rate=configs.subnet_drop_rate,
         )
+    elif configs.backbone == "eatac_resnet50":
+        model = eatac_resnet50(
+            num_classes=configs.num_class,
+            subnet_drop_rate=configs.subnet_drop_rate,
+        )
+    elif configs.backbone == "eatac_resnet101":
+        model = eatac_resnet101(
+            num_classes=configs.num_class,
+            subnet_drop_rate=configs.subnet_drop_rate,
+        )
     else:
         raise ValueError(f"Unknown backbone: {configs.backbone}")
 
@@ -802,7 +813,7 @@ def run():
     elif configs.corruption_list is not None:
         corruptions = configs.corruption_list
     else:
-        corruptions = CIFAR_CORRUPTIONS
+        corruptions = STANDARD_CORRUPTIONS
     logger.info(f"Building target clients for {len(corruptions)} corruptions...")
     logger.info(f"  Corruptions: {corruptions}")
 

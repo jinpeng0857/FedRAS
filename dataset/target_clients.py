@@ -26,9 +26,45 @@ from torchvision import transforms
 
 from dataset.dataset import (
     DATASET_CONFIGS,
-    CIFAR_CORRUPTIONS,
+    STANDARD_CORRUPTIONS,
     load_corrupted_test,
 )
+
+
+def _extract_labels_fast(dataset, num_samples=None):
+    """Extract labels from a (possibly wrapped) dataset without iterating __getitem__.
+
+    Handles PrecomputedCDataset, NormalizedCorruptedDataset, CorruptedDataset,
+    and plain torchvision datasets by walking the wrapper chain for .targets.
+    Falls back to iteration only when necessary.
+    """
+    total = num_samples if num_samples is not None else len(dataset)
+
+    # Walk the wrapper chain looking for .targets
+    targets = None
+    ds = dataset
+    seen = set()
+    while ds is not None and id(ds) not in seen:
+        seen.add(id(ds))
+        if hasattr(ds, 'targets'):
+            targets = ds.targets
+            break
+        # Unwrap known wrappers
+        for attr in ('corr_ds', 'dataset'):
+            if hasattr(ds, attr):
+                ds = getattr(ds, attr)
+                break
+        else:
+            break
+
+    if targets is not None:
+        if isinstance(targets, (list, np.ndarray)):
+            return np.array(targets[:total])
+        elif isinstance(targets, torch.Tensor):
+            return targets[:total].cpu().numpy()
+
+    # Fallback: extract via __getitem__ (only label, no heavy transform)
+    return np.array([dataset[i][1] for i in range(total)])
 
 
 def _assign_samples_to_clients(
@@ -165,7 +201,7 @@ def build_single_corruption_target_clients(
             - labels: list of int (ground truth labels)
     """
     if corruptions is None:
-        corruptions = CIFAR_CORRUPTIONS
+        corruptions = STANDARD_CORRUPTIONS
 
     cfg = DATASET_CONFIGS[dataset_name]
     num_classes = cfg["num_classes"]
@@ -201,8 +237,8 @@ def build_single_corruption_target_clients(
             total_available = len(full_dataset)
             total_to_use = min(total_needed, total_available)
 
-            # Get labels for partition
-            all_labels = np.array([full_dataset[i][1] for i in range(total_available)])
+            # Get labels for partition (fast path)
+            all_labels = _extract_labels_fast(full_dataset, total_available)
 
             all_indices = list(range(total_available))
             rng.shuffle(all_indices)
@@ -245,9 +281,7 @@ def build_single_corruption_target_clients(
         else:
             # Use all samples
             total_available = len(full_dataset)
-            all_labels = np.array(
-                [full_dataset[i][1] for i in range(total_available)]
-            )
+            all_labels = _extract_labels_fast(full_dataset, total_available)
 
             client_indices_mapping = _assign_samples_to_clients(
                 total_samples=total_available,

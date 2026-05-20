@@ -39,7 +39,7 @@ class FedAvgClient(BaseClient):
         return {"backbone": self.backbone.state_dict(), "accuracy": accuracy}
 
     def test(self):
-        from utils.utils import compute_ece
+        from utils.metrics import compute_ece
         self.backbone.to(self.device)
         self.backbone.eval()
         all_targets, all_probs = [], []
@@ -60,7 +60,7 @@ class FedAvgClient(BaseClient):
         return {"acc": acc, "ece": ece}
 
     def tent_test(self, tta_lr=1e-3):
-        from utils.utils import compute_ece
+        from utils.metrics import compute_ece
         self.backbone.to(self.device)
         initial_state = copy.deepcopy(self.backbone.state_dict())
         self.backbone.train()

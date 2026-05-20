@@ -102,6 +102,14 @@ class FedACGServer(BaseServer):
         checkpoint = {
             "epoch": round_num,
             "model_state_dict": self.backbone.state_dict(),
+            "config_info": {
+                "num_class": getattr(self.configs, "num_class", None),
+                "backbone": getattr(self.configs, "backbone", None),
+                "dataset": getattr(self.configs, "dataset", None),
+                "alpha": getattr(self.configs, "alpha", None),
+                "fedacg_mode": getattr(self.configs, "fedacg_mode", None),
+                "subnet_drop_rate": getattr(self.configs, "subnet_drop_rate", None),
+            },
         }
         if self.global_momentum is not None:
             checkpoint["global_momentum"] = self.global_momentum

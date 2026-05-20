@@ -1,9 +1,9 @@
 """
-Metrics for Federated Test-Time Adaptation evaluation.
+Shared metrics for FEDEATA evaluation.
 
-Provides:
+Single source of truth for:
   - Accuracy, ECE, NLL, Brier score
-  - Per-client reliability weighting (raw score, per-domain softmax)
+  - Per-client reliability weighting
 """
 
 import torch
@@ -42,8 +42,7 @@ def compute_nll(logits, labels):
 
 
 def compute_brier_score(probs, labels):
-    """
-    Compute Brier score: (1/N) * sum ||one_hot(y) - p(x)||^2.
+    """Compute Brier score: (1/N) * sum ||one_hot(y) - p(x)||^2.
     Lower is better (0 = perfect, 2 = worst for K>=2).
     """
     num_classes = probs.size(1)

@@ -11,7 +11,7 @@ Usage:
 
 import numpy as np
 import torch
-from dataset.dataset import load_cifar, load_cinic, load_tiny_imagenet
+from dataset.dataset import load_cifar, load_cinic, load_imagenet
 from src.model.resnet import resnet18
 from src.model.eatac_resnet import eatac_resnet18, eatac_resnet34
 from utils.config import parser
@@ -46,9 +46,9 @@ def run():
     elif configs.dataset == "cinic":
         train_datasets, num_class = load_cinic(configs)
         data_size = 32
-    elif configs.dataset == "tinyimagenet":
-        train_datasets, num_class = load_tiny_imagenet(configs)
-        data_size = 64
+    elif configs.dataset == "imagenet":
+        train_datasets, num_class = load_imagenet(configs)
+        data_size = 224
     else:
         raise ValueError(f"Unknown dataset: {configs.dataset}")
 

@@ -144,7 +144,7 @@ class EATACTester:
             episodic=getattr(cfg, "episodic", False),
             num_class=getattr(cfg, "num_class", 10),
             eval_after_adapt=getattr(cfg, "eval_after_adapt", False),
-            freeze_bn=getattr(cfg, "freeze_bn", False),
+            freeze_bn=getattr(cfg, "freeze_bn", True),
         )
 
     def _setup_adaptation(self):
@@ -195,7 +195,7 @@ class EATACTester:
         Returns:
             dict with keys: accuracy
         """
-        from utils.utils import compute_accuracy
+        from utils.metrics import compute_accuracy
 
         self.model.eval()
         all_logits, all_labels = [], []
@@ -229,7 +229,7 @@ class EATACTester:
             dict with keys: accuracy, ece, forwards, backwards,
                             avg_entropy_pass_rate, avg_selected_ratio
         """
-        from utils.utils import compute_ece, compute_accuracy
+        from utils.metrics import compute_ece, compute_accuracy
 
         self._setup_adaptation()
         self.sample_selector.reset()
