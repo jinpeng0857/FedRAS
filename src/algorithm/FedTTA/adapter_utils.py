@@ -236,3 +236,35 @@ def adapt_state_to_device(
     return OrderedDict(
         {k: v.to(device) for k, v in state.items()}
     )
+
+
+def extract_bn_running_stats(model: nn.Module) -> OrderedDict:
+    """
+    Extract BN running statistics (buffers, not affine params).
+
+    Returns running_mean, running_var, and num_batches_tracked for every
+    BatchNorm module in the model. These are data-derived statistics,
+    unrelated to the gradient-optimised affine parameters (weight/bias).
+    """
+    stats = OrderedDict()
+    for name, module in model.named_modules():
+        if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
+            for key in ('running_mean', 'running_var', 'num_batches_tracked'):
+                buf = getattr(module, key, None)
+                if buf is not None:
+                    stats[f"{name}.{key}"] = buf.data.detach().cpu().clone()
+    return stats
+
+
+def load_bn_running_stats(model: nn.Module, stats_dict: Dict):
+    """
+    Load BN running statistics into a model.
+
+    Only touches running_mean, running_var, num_batches_tracked buffers.
+    Does not modify any trainable parameters.
+    """
+    model_state = model.state_dict()
+    for name, tensor in stats_dict.items():
+        if name in model_state:
+            model_state[name].copy_(tensor)
+    model.load_state_dict(model_state, strict=False)

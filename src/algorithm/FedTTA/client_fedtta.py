@@ -42,6 +42,8 @@ from .adapter_utils import (
     extract_adapt_state,
     load_adapt_state,
     state_delta,
+    extract_bn_running_stats,
+    load_bn_running_stats,
 )
 from utils.metrics import compute_accuracy, compute_ece, compute_client_reliability
 
@@ -239,36 +241,47 @@ class FedTTAClient:
         test_loader,
         num_batches: Optional[int] = None,
         eval_after_adapt: bool = False,
+        init_bn_stats: Optional[OrderedDict] = None,
     ) -> Dict:
         """
         Run local EATA-C TTA on single-corruption data.
 
         Steps:
           0. Reset full model to source weights (prevents cross-round leakage)
-          1. Load init_adapt_state (phi_acc from server) into local model
-          2. Setup adaptation (create optimizer, enable grad for norm params)
-          3. Reset sample selector
-          4. Run EATA-C on test_loader
-          5. Compute delta = new_adapt_state - init_adapt_state
-          6. Return delta + metrics
+          1. Load server's accelerated adapter (phi_acc)
+          1b. Load BN running stats for cross-round persistence (if provided)
+          2. Save the accelerated state as proximal anchor
+          3. Setup adaptation (create optimizer, enable grad for norm params)
+          4. Reset sample selector
+          5. Run EATA-C on test_loader
+          6. Extract BN running stats if updated (freeze_bn=False)
+          7. Compute delta = new_adapt_state - init_adapt_state
+          8. Return delta + metrics + optional BN stats
 
         Args:
             init_adapt_state: server's accelerated adapter state (phi_acc)
             test_loader: single-corruption test DataLoader
             num_batches: if set, only adapt on this many batches
             eval_after_adapt: if True, re-forward after adaptation for eval
+            init_bn_stats: domain-specific BN running stats from server
 
         Returns:
             dict with keys:
                 client_id, domain_id, corruption,
                 delta (OrderedDict), num_samples,
-                stats (dict of accuracy, ece, selected_ratio, ...)
+                stats (dict of accuracy, ece, selected_ratio, ...),
+                bn_running_stats (optional, only when freeze_bn=False)
         """
         # 0. Reset full model to source weights (critical: prevents BN stats / adapter leakage)
         self._reset_model()
 
         # 1. Load server's accelerated adapter
         self._load_adapt_state(init_adapt_state)
+
+        # 1b. Load BN running stats for cross-round domain consistency
+        #     (only affine params carry momentum; running stats are pure FedAvg)
+        if init_bn_stats is not None:
+            load_bn_running_stats(self.model, init_bn_stats)
 
         # 2. Save the accelerated state as proximal anchor
         accelerated_anchor = copy.deepcopy(init_adapt_state)
@@ -385,7 +398,6 @@ class FedTTAClient:
                                 prox_loss = prox_loss + (diff ** 2).sum()
                                 prox_numel += diff.numel()
                         if prox_numel > 0:
-                            prox_loss = prox_loss / prox_numel
                             loss = loss + gamma_prox * prox_loss
                             total_prox_loss += prox_loss.item()
 
@@ -454,7 +466,7 @@ class FedTTAClient:
             "mean_disagreement": avg_disagreement,
         })
 
-        return {
+        result = {
             "client_id": self.client_id,
             "domain_id": self.domain_id,
             "corruption": self.corruption,
@@ -481,3 +493,10 @@ class FedTTAClient:
                 "backwards": total_backwards,
             },
         }
+
+        # Export BN running stats for cross-round persistence (only when they
+        # may have been updated — i.e. freeze_bn=False).
+        if not getattr(self.configs, 'freeze_bn', True):
+            result["bn_running_stats"] = extract_bn_running_stats(self.model)
+
+        return result

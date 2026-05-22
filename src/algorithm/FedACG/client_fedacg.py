@@ -83,6 +83,13 @@ class FedACGClient(BaseClient):
             weight_decay=self.weight_decay,
         )
 
+        # LR scheduler (FedACG-main alignment)
+        self.local_lr_decay = getattr(configs, 'local_lr_decay', 1.0)
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer=self.optimizer,
+            lr_lambda=lambda epoch: self.local_lr_decay ** epoch,
+        )
+
         # Control which losses are active
         self.mode = configs.fedacg_mode
         self.use_prox = (self.mode in ["fedprox", "feddyn", "fedacg"])
@@ -92,9 +99,13 @@ class FedACGClient(BaseClient):
         self.use_ntd = (self.mode == "fedntd")
         self.use_dyn = (self.mode == "feddyn")
 
-        # FedDyn state
+        # FedDyn state (initialised to zero so Round 0 also gets the
+        # first-order Lagrangian regulariser — FedDyn paper Eqn.3).
         if self.use_dyn:
-            self.local_delta = None
+            self.local_delta = {
+                n: torch.zeros_like(p).cpu()
+                for n, p in self.global_model.named_parameters()
+            }
 
     def update_global_model(self, state_dict):
         self.global_model.load_state_dict(state_dict)
@@ -217,6 +228,7 @@ class FedACGClient(BaseClient):
 
                 total_loss = sum(losses.values())
                 total_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.backbone.parameters(), 10.0)
                 self.optimizer.step()
 
                 # Accuracy tracking
@@ -226,15 +238,14 @@ class FedACGClient(BaseClient):
 
         accuracy = correct / total if total > 0 else 0.0
 
+        # Step LR scheduler (FedACG-main alignment)
+        self.scheduler.step()
+
         # FedDyn: update local deltas
         if self.use_dyn:
             fixed_params = {
                 n: p for n, p in self.global_model.named_parameters()
             }
-            if self.local_delta is None:
-                self.local_delta = copy.deepcopy(
-                    {n: torch.zeros_like(p).cpu() for n, p in fixed_params.items()}
-                )
             for n, _ in self.backbone.named_parameters():
                 if n in self.local_delta:
                     self.local_delta[n] = (

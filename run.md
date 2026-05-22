@@ -39,13 +39,13 @@ python test_eatac.py --dataset cifar100 --backbone eatac_resnet18 --fisher_alpha
 | `--local_tta_batches` | None | 每轮每客户端适应多少 batch（None=全量） |
 | `--target_participation_rate` | 1.0 | 每轮参与率（覆盖 `--join_ratio`） |
 | `--lambda_tta` | 0.85 | FedACG 动量系数 |
-| `--gamma_prox` | 0.01 | 局部近端正则强度 |
+| `--gamma_prox` | 0.01 | 局部近端正则强度（近期修复移除了逐元素归一化，现为有效强度。若从旧版本迁移、需同等情况对比，应除以参数量级约 10000 来匹配旧版行为） |
 | `--adapt_steps` | 3 | 每 batch 内 TTA 梯度步数 |
 | `--adapt_lr` | 0.005 | TTA 学习率 |
 | `--beta_fisher` | 50.0 | Fisher 正则强度（即 `fisher_alpha`） |
 | `--alpha_calib` | 0.1 | 熵正则强度（即 `entropy_reg_weight`） |
 | `--e_margin` | **0.4** | 熵过滤阈值 = margin * ln(C) |
-| `--epsilon` | **0.05** | 多样性过滤余弦阈值 |
+| `--epsilon` | **0.05** | 多样性过滤余弦阈值。数据集相关：CIFAR-10 取 0.40-0.55，CIFAR-100 取 0.15-0.40，ImageNet 取 0.01-0.08。值越小过滤越严格 |
 | `--reliability_tau` | **0.5** | reliability softmax 温度（越小越选择性） |
 | `--weight_by_num_samples` | False | 聚合时是否乘以样本数权重 |
 | `--freeze_bn` | True | 冻结 BN running stats |

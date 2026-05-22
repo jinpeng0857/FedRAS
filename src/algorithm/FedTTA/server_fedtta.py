@@ -22,7 +22,7 @@ Formula per round for domain k:
 
 import copy
 import os
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -36,6 +36,7 @@ from .adapter_utils import (
     weighted_average_delta,
     zeros_like_state,
     count_adapt_params,
+    extract_bn_running_stats,
 )
 from utils.metrics import compute_client_reliability
 
@@ -85,20 +86,27 @@ class FedTTAServer:
         # Source adapter (initial state for all domains)
         self.source_adapt_state = extract_adapt_state(self.base_model)
 
+        # Source BN running stats (data-derived buffers, not gradient-optimised)
+        self.source_bn_stats = extract_bn_running_stats(self.base_model)
+
         # Domain-isolated adapters and momentums
         # Each domain k: domain_adapters[k] = current phi_k
         #                domain_momentums[k] = current m_k
         self.domain_adapters: Dict[int, Dict] = {}
         self.domain_momentums: Dict[int, Dict] = {}
 
+        # Domain-isolated BN running stats (FedAvg only — no momentum/lookahead)
+        self.domain_bn_stats: Dict[int, Dict] = {}
+
         # Domain metadata
         self.domain_info: Dict[int, Dict] = {}
 
     def _get_or_init_domain(self, domain_id: int, corruption: str):
-        """Initialize per-domain adapter and momentum if first encounter."""
+        """Initialize per-domain adapter, momentum, and BN stats if first encounter."""
         if domain_id not in self.domain_adapters:
             self.domain_adapters[domain_id] = copy.deepcopy(self.source_adapt_state)
             self.domain_momentums[domain_id] = zeros_like_state(self.source_adapt_state)
+            self.domain_bn_stats[domain_id] = copy.deepcopy(self.source_bn_stats)
             self.domain_info[domain_id] = {
                 "corruption": corruption,
                 "num_clients": 0,
@@ -112,6 +120,9 @@ class FedTTAServer:
         phi_acc = phi_k + lambda * m_k
 
         When use_momentum=False, phi_acc = phi_k (no momentum).
+
+        Note: BN running stats are NOT accelerated — they are purely
+        data-derived and must never undergo momentum/lookahead.
         """
         phi_k = self.domain_adapters[domain_id]
         lambda_tta = getattr(self.configs, "lambda_tta", 0.85)
@@ -165,6 +176,9 @@ class FedTTAServer:
             # Get accelerated adapter
             accelerated_state = self.get_accelerated_state(domain_id)
 
+            # Get domain BN running stats (FedAvg-only, no momentum/lookahead)
+            bn_stats = self.domain_bn_stats.get(domain_id, self.source_bn_stats)
+
             # Run local EATA-C
             client_obj = client_objects[cid]
             result = client_obj.run_local_eatac_tta(
@@ -172,6 +186,7 @@ class FedTTAServer:
                 test_loader=info["test_loader"],
                 num_batches=getattr(self.configs, "local_tta_batches", None),
                 eval_after_adapt=getattr(self.configs, "eval_after_adapt", False),
+                init_bn_stats=bn_stats,
             )
 
             domain_reports[domain_id].append(result)
@@ -244,6 +259,25 @@ class FedTTAServer:
                 # FedAvg: phi_k = phi_k + Delta_k
                 old_adapter = self.domain_adapters[domain_id]
                 self.domain_adapters[domain_id] = add_state(old_adapter, delta_k, scale=1.0)
+
+            # ── BN running stats aggregation (FedAvg only, no momentum) ──
+            # Running stats are data-derived buffers, not gradient-optimised
+            # parameters.  Applying momentum or lookahead would produce
+            # physically invalid statistics (e.g. negative variance).
+            bn_reports = [r for r in reports if "bn_running_stats" in r]
+            if bn_reports:
+                bs_samples = [r["num_samples"] for r in bn_reports]
+                bs_total = sum(bs_samples)
+                if bs_total > 0:
+                    aggregated = OrderedDict()
+                    first_stats = bn_reports[0]["bn_running_stats"]
+                    for k in first_stats:
+                        weighted = sum(
+                            r["bn_running_stats"][k].float() * (r["num_samples"] / bs_total)
+                            for r in bn_reports
+                        )
+                        aggregated[k] = weighted
+                    self.domain_bn_stats[domain_id] = aggregated
 
             # Domain-level metrics
             domain_acc = sum(
@@ -332,25 +366,34 @@ class FedTTAServer:
         }
 
     def save_adapters(self, path: str):
-        """Save all domain adapters to a file."""
+        """Save all domain adapters, momentums, and BN stats to a file."""
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         torch.save({
             "domain_adapters": self.domain_adapters,
             "domain_momentums": self.domain_momentums,
             "domain_info": self.domain_info,
             "source_adapt_state": self.source_adapt_state,
+            "domain_bn_stats": self.domain_bn_stats,
+            "source_bn_stats": self.source_bn_stats,
         }, path)
 
     def load_adapters(self, path: str):
-        """Load domain adapters from a file."""
+        """Load domain adapters, momentums, and BN stats from a file."""
         save_dict = torch.load(path, map_location="cpu")
         self.domain_adapters = save_dict["domain_adapters"]
         self.domain_momentums = save_dict["domain_momentums"]
         self.domain_info = save_dict["domain_info"]
         self.source_adapt_state = save_dict["source_adapt_state"]
+        # BN stats (backward-compatible: missing in old saves → use source copy)
+        self.domain_bn_stats = save_dict.get("domain_bn_stats", {})
+        self.source_bn_stats = save_dict.get("source_bn_stats",
+                                              extract_bn_running_stats(self.base_model))
 
     def get_domain_adapter(self, domain_id: int) -> Dict:
         return self.domain_adapters.get(domain_id, None)
 
     def get_domain_momentum(self, domain_id: int) -> Dict:
         return self.domain_momentums.get(domain_id, None)
+
+    def get_domain_bn_stats(self, domain_id: int) -> Dict:
+        return self.domain_bn_stats.get(domain_id, None)

@@ -122,9 +122,14 @@ class EATACEngine:
                 loss_details: dict of individual loss terms
         """
         # ---- Forward pass (no grad) for selection ----
+        # Temp eval() to keep selection a pure inference pass (no BN stats update,
+        # no train-mode stochasticity), then restore original state.
+        orig_training = self.model.training
+        self.model.eval()
         with torch.no_grad():
             result = self.model(x_batch)
             full_logits = result["logit"] if isinstance(result, dict) else result
+        self.model.train(orig_training)
 
         # ---- Sample selection ----
         scores, selected_indices = sample_selector.select(
@@ -184,7 +189,6 @@ class EATACEngine:
                             prox_loss = prox_loss + (diff ** 2).sum()
                             prox_numel += diff.numel()
                     if prox_numel > 0:
-                        prox_loss = prox_loss / prox_numel
                         loss = loss + gamma_prox * prox_loss
                         loss_details["proximal"] = prox_loss.item()
 
