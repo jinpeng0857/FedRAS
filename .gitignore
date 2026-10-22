@@ -2,10 +2,20 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
-results/
+train/results/
+outputs/
+test/outputs/
 data/
 *.pt
 *.pth
 *.log
 wandb/
-.DS_Store
+
+# generated deliverables / synced snapshots (kept on disk, not in git)
+output/
+server_snapshot_round2_*/
+.codegraph/
+.superpowers/
+.dsh-vision-toolkit/
+.paper-figures-build/
+.ppt-redraw-build/

@@ -1,30 +1,19 @@
 """
-FEDEATA dataset loading, preprocessing, partitioning, and corruption.
-
-Consolidated from:
-  - src/data/data_partition.py (loading, partitioning, transforms)
-  - src/data/corruptions.py (CIFAR-C online corruptions)
+FEDEATA dataset loading, preprocessing, and partitioning (training only).
 
 Public API:
-  Dataset classes:  CorruptedDataset, PrecomputedCDataset
-  Corruption:       CIFARCorruption
-  Loading:          load_cifar, load_cinic, load_tiny_imagenet,
-                    load_clean_test, load_corrupted_test
-  Partitioning:     dirichlet_partition
+  Loading:          load_cifar, load_cinic, load_imagenet
+  Partitioning:     dirichlet_partition, dirichlet_partition_equal_size
   Transforms:       get_transform
-  Constants:        DATASET_PATHS, DATASET_CONFIGS, STANDARD_CORRUPTIONS
+  Constants:        DATASET_PATHS, DATASET_CONFIGS
 """
 
-import io
-import math
 import os
 import numpy as np
 import torch
-import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as transforms
-from PIL import Image
-from torch.utils.data import Dataset, Subset
+from torch.utils.data import Subset
 
 
 # ========== Constants ==========
@@ -38,13 +27,6 @@ DATASET_PATHS = {
     "imagenet": os.path.join(_DATA_ROOT, "imagenet"),
 }
 
-# Default paths for pre-computed C (corruption) datasets
-DEFAULT_C_PATHS = {
-    "cifar10": os.path.join(_DATA_ROOT, "CIFAR-10-C"),
-    "cifar100": os.path.join(_DATA_ROOT, "CIFAR-100-C"),
-    "imagenet": os.path.join(_DATA_ROOT, "ImageNet-C"),
-}
-
 DATASET_CONFIGS = {
     "cifar10": {"num_classes": 10, "img_size": 32, "mean": [0.4914, 0.4822, 0.4465], "std": [0.2023, 0.1994, 0.2010]},
     "cifar100": {"num_classes": 100, "img_size": 32, "mean": [0.5071, 0.4867, 0.4408], "std": [0.2675, 0.2565, 0.2761]},
@@ -52,27 +34,47 @@ DATASET_CONFIGS = {
     "imagenet": {"num_classes": 1000, "img_size": 224, "mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
 }
 
-# 15 standard corruptions used by both CIFAR-C and ImageNet-C
-STANDARD_CORRUPTIONS = [
-    "gaussian_noise", "shot_noise", "impulse_noise",
-    "defocus_blur", "glass_blur", "motion_blur", "zoom_blur",
-    "snow", "frost", "fog", "brightness", "contrast",
-    "elastic_transform", "pixelate", "jpeg_compression",
-]
-
 
 # ========== Transforms ==========
 
-def get_transform(dataset_name, train=True):
+def get_transform(dataset_name, train=True, configs=None):
     cfg = DATASET_CONFIGS[dataset_name]
     img_size = cfg["img_size"]
-    if train:
+    if dataset_name == "imagenet":
+        if train:
+            return transforms.Compose([
+                transforms.RandomResizedCrop(img_size),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(cfg["mean"], cfg["std"]),
+            ])
         return transforms.Compose([
-            transforms.RandomCrop(img_size, padding=4),
-            transforms.RandomHorizontalFlip(),
+            transforms.Resize(256),
+            transforms.CenterCrop(img_size),
             transforms.ToTensor(),
             transforms.Normalize(cfg["mean"], cfg["std"]),
         ])
+    if train:
+        transform_ops = [
+            transforms.RandomCrop(img_size, padding=4),
+            transforms.RandomHorizontalFlip(),
+        ]
+        if (
+            dataset_name == "cifar100"
+            and configs is not None
+            and getattr(configs, "use_randaugment", False)
+        ):
+            transform_ops.append(
+                transforms.RandAugment(
+                    num_ops=getattr(configs, "randaugment_n", 2),
+                    magnitude=getattr(configs, "randaugment_m", 9),
+                )
+            )
+        transform_ops.extend([
+            transforms.ToTensor(),
+            transforms.Normalize(cfg["mean"], cfg["std"]),
+        ])
+        return transforms.Compose(transform_ops)
     else:
         return transforms.Compose([
             transforms.ToTensor(),
@@ -120,50 +122,68 @@ def dirichlet_partition(labels, num_clients, alpha, seed=42):
 
 def dirichlet_partition_equal_size(labels, num_clients, alpha, seed=42):
     """
-    Dirichlet non-IID partition with equal sample count per client.
+    Dirichlet non-IID partition with exactly equal sample count per client.
 
     Each client receives exactly len(labels) // num_clients samples.
-    Preserves Dirichlet non-IID character by:
-      1) Running standard Dirichlet partition (non-IID, unequal sizes)
-      2) Trimming over-filled clients + filling under-filled clients from pool
+    Within each client, class proportions follow Dirichlet(alpha) non-IID.
 
-    The class distribution from step 1 is largely preserved in step 2
-    because trimming keeps the Dirichlet ratio, and filling adds only a
-    small fraction (< samples_per_client方差/总) of random samples.
+    Algorithm (single-pass, no trim-and-fill dilution):
+      1) For each class c, draw Dirichlet proportions p_c ~ Dir(alpha) across clients.
+      2) Base allocation: client k gets floor(p_c[k] * size(class_c)) samples of class c.
+      3) Priority fill: remaining samples of class c are allocated one-by-one
+         to the client with the highest p_c[k] that is still below capacity.
+
+    This guarantees both exact equal sizes AND strict Dirichlet non-IID
+    (no random pool fill that would dilute the Dirichlet distribution).
 
     alpha=0.1 (extreme non-IID), alpha=1.0 (moderate), alpha=1000 (near-IID).
     """
     if alpha <= 0:
         raise ValueError(f"Dirichlet alpha must be > 0, got {alpha}")
 
+    rng = np.random.RandomState(seed)
+    num_classes = len(np.unique(labels))
+    class_indices = [np.where(labels == c)[0] for c in range(num_classes)]
+    class_sizes = np.array([len(idx) for idx in class_indices])
+
     total = len(labels)
     samples_per_client = total // num_clients
 
-    # Step 1: Standard Dirichlet partition (non-IID, unequal sizes)
-    client_indices = dirichlet_partition(labels, num_clients, alpha, seed)
+    # Step 1: For each class, draw Dirichlet proportions across clients
+    class_props = rng.dirichlet(np.repeat(alpha, num_clients), size=num_classes)
 
-    # Step 2: Balance to equal sizes
-    rng = np.random.RandomState(seed + 999)
+    # Step 2: Base allocation (floor)
+    allocation = np.floor(class_props * class_sizes.reshape(-1, 1)).astype(int)
+    client_totals = allocation.sum(axis=0)
 
-    pool = []
-    for k in range(num_clients):
-        if len(client_indices[k]) > samples_per_client:
-            # Randomly trim to samples_per_client, move excess to pool
-            kept = rng.choice(
-                np.array(client_indices[k]), samples_per_client, replace=False
-            ).tolist()
-            kept_set = set(kept)
-            pool.extend([x for x in client_indices[k] if x not in kept_set])
-            client_indices[k] = kept
+    # Step 3: Priority fill — one-by-one for remaining samples per class
+    remaining_class = class_sizes - allocation.sum(axis=1)
+    for c in range(num_classes):
+        n_remain = int(remaining_class[c])
+        if n_remain <= 0:
+            continue
+        # Sort clients by Dirichlet proportion descending (priority = deserves more)
+        order = np.argsort(class_props[c])[::-1]
+        idx = 0
+        while n_remain > 0 and idx < len(order):
+            k = order[idx]
+            if client_totals[k] < samples_per_client:
+                allocation[c, k] += 1
+                client_totals[k] += 1
+                n_remain -= 1
+            else:
+                idx += 1
 
-    rng.shuffle(pool)
-    pool_ptr = 0
-
-    for k in range(num_clients):
-        deficit = samples_per_client - len(client_indices[k])
-        if deficit > 0:
-            client_indices[k].extend(pool[pool_ptr:pool_ptr + deficit])
-            pool_ptr += deficit
+    # Convert allocation matrix to per-client index lists
+    client_indices = [[] for _ in range(num_clients)]
+    for c in range(num_classes):
+        perm = rng.permutation(class_indices[c])
+        start = 0
+        for k in range(num_clients):
+            n = int(allocation[c, k])
+            if n > 0:
+                client_indices[k].extend(perm[start:start + n].tolist())
+                start += n
 
     return client_indices
 
@@ -171,7 +191,7 @@ def dirichlet_partition_equal_size(labels, num_clients, alpha, seed=42):
 # ========== FL Dataset Loaders ==========
 
 def load_cifar(configs):
-    """Load CIFAR-10/100 with Dirichlet partition."""
+    """Load CIFAR-10/100 with equal-size Dirichlet non-IID partition."""
     name = configs.dataset
     cfg = DATASET_CONFIGS[name]
     data_path = configs.dataset_path or DATASET_PATHS[name]
@@ -183,26 +203,19 @@ def load_cifar(configs):
 
     train_dataset = dataset_cls(
         root=data_path, train=True,
-        transform=get_transform(name, train=True),
+        transform=get_transform(name, train=True, configs=configs),
         download=True,
     )
 
-    # Dirichlet partition (optional equal-size mode)
-    equal_size = getattr(configs, "equal_size", False)
-    if equal_size:
-        client_idxs = dirichlet_partition_equal_size(
-            labels=np.array(train_dataset.targets),
-            num_clients=configs.num_client,
-            alpha=configs.alpha,
-            seed=configs.dataset_seed,
-        )
-    else:
-        client_idxs = dirichlet_partition(
-            labels=np.array(train_dataset.targets),
-            num_clients=configs.num_client,
-            alpha=configs.alpha,
-            seed=configs.dataset_seed,
-        )
+    # Equal-size Dirichlet non-IID partition
+    # Each client gets exactly len(train_dataset) // num_client samples,
+    # with Dirichlet(alpha) non-IID class distribution within each client.
+    client_idxs = dirichlet_partition_equal_size(
+        labels=np.array(train_dataset.targets),
+        num_clients=configs.num_client,
+        alpha=configs.alpha,
+        seed=configs.dataset_seed,
+    )
 
     client_datasets = []
     for idxs in client_idxs:
@@ -257,483 +270,3 @@ def load_imagenet(configs):
     client_datasets = [Subset(train_dataset, idxs) for idxs in client_idxs]
     return client_datasets, cfg["num_classes"]
 
-
-# ========== Clean Test Data Loader ==========
-
-def load_clean_test(configs):
-    """Load clean (ID) test dataset."""
-    name = configs.dataset
-    cfg = DATASET_CONFIGS[name]
-    data_path = configs.dataset_path or DATASET_PATHS[name]
-    transform = get_transform(name, train=False)
-
-    if name == "cifar10":
-        dataset = torchvision.datasets.CIFAR10(
-            root=data_path, train=False,
-            transform=transform, download=True,
-        )
-    elif name == "cifar100":
-        dataset = torchvision.datasets.CIFAR100(
-            root=data_path, train=False,
-            transform=transform, download=True,
-        )
-    else:
-        # For image-folder datasets
-        val_dir = os.path.join(data_path, "val")
-        if not os.path.isdir(val_dir):
-            raise FileNotFoundError(
-                f"Validation directory not found: {val_dir}\n"
-                f"Expected for dataset '{name}' at: {val_dir}"
-            )
-        dataset = torchvision.datasets.ImageFolder(root=val_dir, transform=transform)
-
-    return dataset, cfg["num_classes"]
-
-
-# ========== CIFAR-C Corruption Functions ==========
-
-
-def _severity_param(params: list, severity: int):
-    """Index into a 5-element severity parameter list (severity 1-5)."""
-    return params[min(severity, 5) - 1]
-
-
-def _clipped_zoom(img, factor):
-    """Zoom into or out of an image, then resize back."""
-    h, w = img.shape[-2], img.shape[-1]
-    if factor < 1:
-        # Zoom in: crop center
-        new_h, new_w = int(h * factor), int(w * factor)
-        top = (h - new_h) // 2
-        left = (w - new_w) // 2
-        cropped = img[..., top:top + new_h, left:left + new_w]
-        return F.interpolate(cropped.unsqueeze(0), size=(h, w), mode='bilinear',
-                             align_corners=False).squeeze(0)
-    elif factor > 1:
-        # Zoom out: pad and resize
-        new_h, new_w = int(h / factor), int(w / factor)
-        resized = F.interpolate(img.unsqueeze(0), size=(new_h, new_w),
-                                mode='bilinear', align_corners=False).squeeze(0)
-        pad_h, pad_w = (h - new_h) // 2, (w - new_w) // 2
-        padded = F.pad(resized, [pad_w, w - new_w - pad_w, pad_h, h - new_h - pad_h])
-        return padded
-    return img
-
-
-def _disk_kernel(radius):
-    """Create a disk-shaped kernel for motion/glass blur."""
-    ax = torch.arange(-radius, radius + 1, dtype=torch.float32)
-    xx, yy = torch.meshgrid(ax, ax, indexing='ij')
-    kernel = (xx ** 2 + yy ** 2) <= radius ** 2
-    return kernel.float() / kernel.sum()
-
-
-def _gaussian_kernel(size, sigma):
-    ax = torch.arange(-size // 2 + 1, size // 2 + 1, dtype=torch.float32)
-    xx, yy = torch.meshgrid(ax, ax, indexing='ij')
-    kernel = torch.exp(-(xx ** 2 + yy ** 2) / (2 * sigma ** 2))
-    return kernel / kernel.sum()
-
-
-class CIFARCorruption:
-    """Apply CIFAR-C style corruptions to CIFAR images (tensors [0,1])."""
-
-    @staticmethod
-    def get_fn(name):
-        fn_map = {
-            "gaussian_noise": CIFARCorruption.gaussian_noise,
-            "shot_noise": CIFARCorruption.shot_noise,
-            "impulse_noise": CIFARCorruption.impulse_noise,
-            "defocus_blur": CIFARCorruption.defocus_blur,
-            "glass_blur": CIFARCorruption.glass_blur,
-            "motion_blur": CIFARCorruption.motion_blur,
-            "zoom_blur": CIFARCorruption.zoom_blur,
-            "snow": CIFARCorruption.snow,
-            "frost": CIFARCorruption.frost,
-            "fog": CIFARCorruption.fog,
-            "brightness": CIFARCorruption.brightness,
-            "contrast": CIFARCorruption.contrast,
-            "elastic_transform": CIFARCorruption.elastic_transform,
-            "pixelate": CIFARCorruption.pixelate,
-            "jpeg_compression": CIFARCorruption.jpeg_compression,
-        }
-        if name not in fn_map:
-            raise KeyError(f"Unknown corruption type: '{name}'. Valid: {list(fn_map.keys())}")
-        return fn_map[name]
-
-    @staticmethod
-    def gaussian_noise(x, severity=1):
-        std = _severity_param([0.04, 0.06, 0.08, 0.09, 0.10], severity)
-        noise = torch.randn_like(x) * std
-        return torch.clamp(x + noise, 0, 1)
-
-    @staticmethod
-    def shot_noise(x, severity=1):
-        scale = _severity_param([60, 25, 12, 5, 3], severity)
-        x_scaled = x * scale
-        noisy = torch.poisson(x_scaled) / scale
-        return torch.clamp(noisy, 0, 1)
-
-    @staticmethod
-    def impulse_noise(x, severity=1):
-        amount = _severity_param([0.01, 0.02, 0.03, 0.05, 0.07], severity)
-        mask = torch.rand_like(x)
-        noisy = x.clone()
-        noisy[mask < amount / 2] = 1.0
-        noisy[(mask >= amount / 2) & (mask < amount)] = 0.0
-        return noisy
-
-    @staticmethod
-    def defocus_blur(x, severity=1):
-        radius = _severity_param([1, 2, 3, 4, 6], severity)
-        kernel_size = radius * 2 + 1
-        kernel = _disk_kernel(radius)
-        kernel = kernel.view(1, 1, kernel_size, kernel_size).repeat(3, 1, 1, 1)
-        x_blurred = F.conv2d(
-            x.unsqueeze(0), kernel.to(x.device), groups=3, padding=radius
-        ).squeeze(0)
-        return torch.clamp(x_blurred, 0, 1)
-
-    @staticmethod
-    def glass_blur(x, severity=1):
-        """Glass blur: defocus blur + random pixel offsets (vectorized)."""
-        radius = _severity_param([0.5, 0.5, 0.5, 0.5, 0.5], severity)
-        sigma = _severity_param([0.7, 0.9, 1.1, 1.3, 1.5], severity)
-        max_displace = _severity_param([1, 2, 3, 4, 5], severity)
-        repeats = _severity_param([1, 1, 1, 2, 2], severity)
-
-        # Defocus blur first
-        kernel_size = int(2 * radius + 1)
-        if kernel_size < 3:
-            kernel_size = 3
-        kernel = _gaussian_kernel(kernel_size, sigma)
-        kernel = kernel.view(1, 1, kernel_size, kernel_size).repeat(3, 1, 1, 1)
-        x_blurred = F.conv2d(
-            x.unsqueeze(0), kernel.to(x.device), groups=3,
-            padding=kernel_size // 2
-        ).squeeze(0)
-
-        # Vectorized random pixel swaps
-        c, h, w = x_blurred.shape
-        device = x_blurred.device
-        for _ in range(repeats):
-            # Generate all displacement vectors at once (h, w)
-            di = torch.randint(-max_displace, max_displace + 1, (h, w), device=device)
-            dj = torch.randint(-max_displace, max_displace + 1, (h, w), device=device)
-            # Source coordinate grids
-            i_src = torch.arange(h, device=device).view(-1, 1)  # (h, 1)
-            j_src = torch.arange(w, device=device).view(1, -1)  # (1, w)
-            # Target coordinates with boundary clamping
-            ni = (i_src + di).clamp(0, h - 1)
-            nj = (j_src + dj).clamp(0, w - 1)
-            # Vectorized gather: each pixel takes value from a nearby displaced position
-            x_blurred = x_blurred[:, ni, nj]
-
-        return torch.clamp(x_blurred, 0, 1)
-
-    @staticmethod
-    def motion_blur(x, severity=1):
-        """Motion blur using a directional line kernel."""
-        kernel_size = _severity_param([7, 9, 11, 13, 15], severity)
-        angle = float(torch.empty(1).uniform_(0, 180).item())
-        rad = math.radians(angle)
-        kernel = torch.zeros(kernel_size, kernel_size)
-        center = kernel_size // 2
-        for i in range(kernel_size):
-            t = (i - center) / center
-            x_pos = int(round(center + t * center * math.cos(rad)))
-            y_pos = int(round(center + t * center * math.sin(rad)))
-            if 0 <= x_pos < kernel_size and 0 <= y_pos < kernel_size:
-                kernel[y_pos, x_pos] = 1.0
-        kernel = kernel / kernel.sum()
-        kernel = kernel.view(1, 1, kernel_size, kernel_size).repeat(3, 1, 1, 1)
-        x_blurred = F.conv2d(
-            x.unsqueeze(0), kernel.to(x.device), groups=3,
-            padding=kernel_size // 2
-        ).squeeze(0)
-        return torch.clamp(x_blurred, 0, 1)
-
-    @staticmethod
-    def zoom_blur(x, severity=1):
-        """Zoom blur: create concentric scaled versions and blend."""
-        intensities = _severity_param([0.15, 0.25, 0.35, 0.45, 0.55], severity)
-        c, h, w = x.shape
-        result = torch.zeros_like(x)
-        num_steps = 10
-        for step in range(num_steps):
-            factor = 1.0 - step / num_steps * intensities
-            result += _clipped_zoom(x, factor)
-        result /= num_steps
-        return result
-
-    @staticmethod
-    def snow(x, severity=1):
-        """Snow effect: add brightness + motion blur with speckle."""
-        snow_level = _severity_param([0.1, 0.2, 0.3, 0.4, 0.5], severity)
-        c, h, w = x.shape
-        snow_layer = torch.rand(1, h, w, device=x.device)
-        snow_layer = F.interpolate(snow_layer.unsqueeze(0), size=(h, w),
-                                    mode='bilinear', align_corners=False).squeeze(0)
-        snow_mask = (snow_layer > 0.7).float()
-        result = x * (1 + snow_level * 0.5)
-        # Apply motion blur to snow
-        kernel = _gaussian_kernel(5, 1.0)
-        kernel = kernel.view(1, 1, 5, 5).repeat(3, 1, 1, 1)
-        snow_mask_blurred = F.conv2d(
-            snow_mask.unsqueeze(0), kernel.to(x.device), groups=1,
-            padding=2
-        ).squeeze(0)
-        result = torch.where(snow_mask_blurred > 0.3,
-                             result, x)
-        return torch.clamp(result, 0, 1)
-
-    @staticmethod
-    def frost(x, severity=1):
-        """Frost effect: blend image with frost pattern (simulated)."""
-        intensity = _severity_param([0.1, 0.2, 0.3, 0.4, 0.5], severity)
-        c, h, w = x.shape
-        # Simulate frost pattern with Perlin-like noise
-        frost_pattern = torch.rand(c, h, w, device=x.device)
-        frost_pattern = (frost_pattern > intensity).float()
-        kernel = _gaussian_kernel(3, 1.0)
-        kernel = kernel.view(1, 1, 3, 3)
-        # Apply blur to frost pattern for smoother look
-        for _ in range(3):
-            frost_pattern = F.conv2d(frost_pattern.unsqueeze(0),
-                                     kernel.repeat(c, 1, 1, 1).to(x.device),
-                                     groups=c, padding=1).squeeze(0).clamp(0, 1)
-        result = x * (1 - frost_pattern * 0.5) + frost_pattern * 0.8
-        return torch.clamp(result, 0, 1)
-
-    @staticmethod
-    def fog(x, severity=1):
-        """Fog effect: blend with uniform haze, stronger for distant pixels."""
-        fog_level = _severity_param([0.2, 0.3, 0.4, 0.5, 0.6], severity)
-        c, h, w = x.shape
-        # Create depth-like gradient fog
-        fog_map = torch.ones(h, w, device=x.device)
-        for i in range(h):
-            fog_map[i, :] = 1.0 - fog_level * (i / h)
-        fog_color = torch.ones(c, 1, 1, device=x.device) * 0.5
-        result = x * (1 - fog_map.unsqueeze(0)) + fog_color * fog_map.unsqueeze(0)
-        return torch.clamp(result, 0, 1)
-
-    @staticmethod
-    def brightness(x, severity=1):
-        delta = _severity_param([0.05, 0.1, 0.15, 0.2, 0.3], severity)
-        return torch.clamp(x + delta, 0, 1)
-
-    @staticmethod
-    def contrast(x, severity=1):
-        factor = _severity_param([0.85, 0.65, 0.45, 0.25, 0.1], severity)
-        mean = x.mean(dim=(1, 2), keepdim=True)
-        return torch.clamp(factor * (x - mean) + mean, 0, 1)
-
-    @staticmethod
-    def elastic_transform(x, severity=1):
-        """Elastic transformation using random displacement fields."""
-        sigma = _severity_param([0.2, 0.3, 0.4, 0.5, 0.6], severity)
-        c, h, w = x.shape
-        # Create random displacement fields
-        dx = torch.rand(1, h, w, device=x.device) * 2 - 1
-        dy = torch.rand(1, h, w, device=x.device) * 2 - 1
-        # Apply gaussian blur to displacement fields
-        kernel_size = int(sigma * 10) | 1  # make odd
-        if kernel_size < 3:
-            kernel_size = 3
-        kernel = _gaussian_kernel(kernel_size, sigma * 4)
-        kernel_2d = kernel.view(1, 1, kernel_size, kernel_size)
-        dx = F.conv2d(dx.unsqueeze(0), kernel_2d.to(x.device),
-                       padding=kernel_size // 2).squeeze(0)
-        dy = F.conv2d(dy.unsqueeze(0), kernel_2d.to(x.device),
-                       padding=kernel_size // 2).squeeze(0)
-        # Scale displacement
-        scale = _severity_param([2, 4, 6, 8, 10], severity)
-        dx, dy = dx * scale, dy * scale
-        # Create sampling grid
-        grid_y, grid_x = torch.meshgrid(
-            torch.arange(h, dtype=torch.float32, device=x.device),
-            torch.arange(w, dtype=torch.float32, device=x.device),
-            indexing='ij',
-        )
-        grid_x = (grid_x + dx[0]) / (w - 1) * 2 - 1
-        grid_y = (grid_y + dy[0]) / (h - 1) * 2 - 1
-        grid = torch.stack([grid_x, grid_y], dim=-1).unsqueeze(0)
-        result = F.grid_sample(
-            x.unsqueeze(0), grid, mode='bilinear',
-            padding_mode='reflection', align_corners=True
-        ).squeeze(0)
-        return torch.clamp(result, 0, 1)
-
-    @staticmethod
-    def pixelate(x, severity=1):
-        scales = _severity_param([0.9, 0.7, 0.5, 0.33, 0.2], severity)
-        _, h, w = x.shape
-        new_h, new_w = max(1, int(h * scales)), max(1, int(w * scales))
-        x_small = F.interpolate(x.unsqueeze(0), size=(new_h, new_w), mode='nearest')
-        x_large = F.interpolate(x_small, size=(h, w), mode='nearest').squeeze(0)
-        return x_large
-
-    @staticmethod
-    def jpeg_compression(x, severity=1):
-        quality = _severity_param([25, 18, 15, 10, 7], severity)
-        x_np = (x.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-        img = Image.fromarray(x_np)
-        buf = io.BytesIO()
-        img.save(buf, format='JPEG', quality=quality)
-        buf.seek(0)
-        img_compressed = Image.open(buf)
-        result = np.array(img_compressed).astype(np.float32) / 255.0
-        return torch.from_numpy(result).permute(2, 0, 1)
-
-
-# ========== Corruption Dataset Wrappers ==========
-
-class CorruptedDataset(Dataset):
-    """Base class for corrupted test datasets."""
-
-    def __init__(self, dataset, corruption_fn, severity=5):
-        self.dataset = dataset
-        self.corruption_fn = corruption_fn
-        self.severity = severity
-
-    def __len__(self):
-        return len(self.dataset)
-
-    def __getitem__(self, idx):
-        x, y = self.dataset[idx]
-        x = self.corruption_fn(x, self.severity)
-        return x, y
-
-
-class PrecomputedCDataset(Dataset):
-    """Load pre-computed CIFAR-C / ImageNet-C from .npy files.
-
-    5 severity levels are stacked in the data file:
-        {root_path}/{corruption}.npy   shape (N*5, H, W, 3), uint8
-        {root_path}/labels.npy         shape (N,) or (N*5,) int64/uint8
-
-    severity=1 -> data rows [0:N], =2 -> [N:2N], ..., =5 -> [4N:5N]
-    If labels has same length as data, slice it per-severity too.
-    If labels has 1/5 the length, use the full labels array (shared across severities).
-    """
-
-    def __init__(self, root_path, corruption_type, severity=5, transform=None):
-        self.corruption_type = corruption_type
-        self.severity = severity
-
-        data_path = os.path.join(root_path, f"{corruption_type}.npy")
-        labels_path = os.path.join(root_path, "labels.npy")
-
-        if not os.path.exists(data_path):
-            raise FileNotFoundError(
-                f"Pre-computed corruption file not found: {data_path}\n"
-                f"Expected at: {root_path}/{corruption_type}.npy"
-            )
-        if not os.path.exists(labels_path):
-            raise FileNotFoundError(
-                f"Labels file not found: {labels_path}\n"
-                f"Expected at: {root_path}/labels.npy"
-            )
-
-        full_data = np.load(data_path)  # (N*5, H, W, 3), uint8
-        labels = np.load(labels_path)   # (N,) or (N*5,)
-
-        n_per_severity = full_data.shape[0] // 5
-        start = (severity - 1) * n_per_severity
-        end = severity * n_per_severity
-        self.data = full_data[start:end]  # (N, H, W, 3)
-
-        if len(labels) == full_data.shape[0]:
-            # Labels also stacked per-severity
-            self.targets = labels[start:end]
-        else:
-            # Single set of labels shared across all severities
-            self.targets = labels
-
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        img = self.data[idx]  # (H, W, 3), uint8
-        target = int(self.targets[idx])
-
-        # Convert uint8 numpy to PIL Image
-        img = Image.fromarray(img)
-
-        if self.transform is not None:
-            img = self.transform(img)
-        return img, target
-
-
-class NormalizedCorruptedDataset(Dataset):
-    """Wrap a corrupted dataset with normalization."""
-
-    def __init__(self, corr_ds, mean, std):
-        self.corr_ds = corr_ds
-        self.norm = transforms.Normalize(mean, std)
-
-    def __len__(self):
-        return len(self.corr_ds)
-
-    def __getitem__(self, idx):
-        x, y = self.corr_ds[idx]
-        return self.norm(x), y
-
-
-# ========== Corrupted Test Data Loader ==========
-
-def load_corrupted_test(configs, corruption_type, severity=5):
-    """
-    Load a corrupted test dataset.
-
-    Two modes:
-      1) Pre-computed C (CIFAR-C / ImageNet-C): set configs.precomputed_c_path
-         or auto-resolves via DEFAULT_C_PATHS for known datasets.
-         Loads from .npy files: {precomputed_c_path}/{corruption}.npy
-      2) Online corruption (fallback for CIFAR): applies corruption on the fly
-    """
-    name = configs.dataset
-    cfg = DATASET_CONFIGS[name]
-
-    # ---- Mode 1: Pre-computed C ----
-    c_path = getattr(configs, "precomputed_c_path", None)
-    if c_path is None:
-        c_path = DEFAULT_C_PATHS.get(name, None)
-    if c_path is not None and os.path.isdir(c_path):
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(cfg["mean"], cfg["std"]),
-        ])
-        dataset = PrecomputedCDataset(
-            root_path=c_path,
-            corruption_type=corruption_type,
-            severity=severity,
-            transform=transform,
-        )
-        return dataset
-
-    # ---- Mode 2: Online corruption (CIFAR only) ----
-    data_path = configs.dataset_path or DATASET_PATHS[name]
-    base_transform = transforms.Compose([transforms.ToTensor()])
-
-    if name == "cifar10":
-        base_dataset = torchvision.datasets.CIFAR10(
-            root=data_path, train=False,
-            transform=base_transform, download=True,
-        )
-    elif name == "cifar100":
-        base_dataset = torchvision.datasets.CIFAR100(
-            root=data_path, train=False,
-            transform=base_transform, download=True,
-        )
-    else:
-        raise ValueError(f"Online corruption not available for {name}; "
-                         f"place pre-computed C files in {DEFAULT_C_PATHS.get(name, '<C_PATH>')}")
-
-    corrupt_fn = CIFARCorruption.get_fn(corruption_type)
-    corrupted = CorruptedDataset(base_dataset, corrupt_fn, severity)
-
-    return NormalizedCorruptedDataset(corrupted, cfg["mean"], cfg["std"])

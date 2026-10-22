@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="180mm" height="72mm" viewBox="0 0 1800 720">
+  <title>Motivation of FedDR: unreliable updates and accumulated drift</title>
+  <desc>Minimal three-panel scatter schematic showing domain gap, short-term unreliable updates, long-term accumulated drift, and FedDR dual reliability control.</desc>
+  <defs>
+    <style>
+      .txt{font-family:Arial,Helvetica,sans-serif;fill:#111}.panel{font-size:32px;font-weight:700}.head{font-size:24px;font-weight:700}.body{font-size:19px}.small{font-size:16px}.math{font-family:"Times New Roman",serif;font-size:23px;font-style:italic;fill:#111}
+      .boundary{fill:none;stroke:#111;stroke-width:5;stroke-dasharray:18 13;stroke-linecap:round}.thinBoundary{fill:none;stroke:#111;stroke-width:3;stroke-dasharray:10 10;stroke-linecap:round}.black{fill:none;stroke:#111;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.red{fill:none;stroke:#d73027;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.blue{fill:none;stroke:#2c7fb8;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+    </style>
+    <marker id="bBlack" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#111"/></marker>
+    <marker id="bBlackBack" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M10 0L0 5L10 10Z" fill="#111"/></marker>
+    <marker id="bRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#d73027"/></marker>
+    <marker id="bBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#2c7fb8"/></marker>
+  </defs>
+  <path d="M0 0H1800V720H0Z" fill="#fff"/>
+  <path d="M600 42V590M1200 42V590" stroke="#111" stroke-width="2" stroke-dasharray="3 10"/>
+
+  <!-- a: compressed domain-gap argument -->
+  <text x="32" y="54" class="txt panel">a</text>
+  <text x="300" y="54" text-anchor="middle" class="txt head">Domain gap</text>
+  <circle cx="108" cy="147" r="17" fill="#d73027"/><circle cx="158" cy="112" r="17" fill="#d73027"/><circle cx="183" cy="176" r="17" fill="#d73027"/><circle cx="122" cy="215" r="17" fill="#d73027"/><circle cx="191" cy="239" r="17" fill="#d73027"/>
+  <circle cx="379" cy="111" r="17" fill="#2c7fb8"/><circle cx="429" cy="87" r="17" fill="#2c7fb8"/><circle cx="471" cy="138" r="17" fill="#2c7fb8"/><circle cx="402" cy="176" r="17" fill="#2c7fb8"/><circle cx="463" cy="202" r="17" fill="#2c7fb8"/>
+  <path d="M118 378L138 416L98 416Z" fill="#2c7fb8"/><path d="M177 421L197 459L157 459Z" fill="#2c7fb8"/><path d="M237 385L257 423L217 423Z" fill="#2c7fb8"/><path d="M276 449L296 487L256 487Z" fill="#2c7fb8"/><path d="M153 479L173 517L133 517Z" fill="#2c7fb8"/>
+  <path d="M410 369L430 407L390 407Z" fill="#d73027"/><path d="M468 341L488 379L448 379Z" fill="#d73027"/><path d="M511 401L531 439L491 439Z" fill="#d73027"/><path d="M445 447L465 485L425 485Z" fill="#d73027"/>
+  <path d="M70 330C180 370 314 336 391 266C453 210 489 142 507 75" class="boundary"/>
+  <path d="M225 168L344 139" class="black" marker-start="url(#bBlackBack)" marker-end="url(#bBlack)"/>
+  <text x="284" y="127" text-anchor="middle" class="txt body">gap</text>
+  <path d="M372 231C414 254 466 251 512 224" class="blue" stroke-dasharray="8 8" marker-end="url(#bBlue)"/>
+  <path d="M370 279L390 299M390 279L370 299" stroke="#111" stroke-width="5" stroke-linecap="round"/>
+  <text x="399" y="317" class="math">θ₀</text>
+  <text x="300" y="548" text-anchor="middle" class="txt body">anchor meets a shifting target</text>
+
+  <!-- b: short-term and long-term risks -->
+  <text x="626" y="54" class="txt panel">b</text>
+  <text x="900" y="54" text-anchor="middle" class="txt head">Existing federated TTA</text>
+  <path d="M635 315H1165" stroke="#111" stroke-width="2" stroke-dasharray="3 10"/>
+  <text x="655" y="92" class="txt head">Unreliable update</text>
+  <circle cx="708" cy="151" r="17" fill="#2c7fb8"/><circle cx="751" cy="116" r="17" fill="#2c7fb8"/><circle cx="792" cy="173" r="17" fill="#2c7fb8"/>
+  <path d="M708 252L728 290L688 290Z" fill="#2c7fb8"/><path d="M765 227L785 265L745 265Z" fill="#2c7fb8"/>
+  <circle cx="866" cy="151" r="17" fill="#111"/><path d="M904 214L924 252L884 252Z" fill="#111"/><circle cx="950" cy="203" r="17" fill="#111"/>
+  <path d="M824 88C842 144 845 214 823 290" class="boundary"/>
+  <path d="M866 151C893 153 924 169 948 187" class="black" marker-end="url(#bBlack)"/><path d="M905 227C925 219 944 211 959 207" class="black" marker-end="url(#bBlack)"/>
+  <text x="1010" y="191" class="txt body">noise-biased update</text>
+
+  <text x="655" y="353" class="txt head">Accumulated drift</text>
+  <circle cx="708" cy="422" r="17" fill="#2c7fb8"/><circle cx="759" cy="391" r="17" fill="#2c7fb8"/><circle cx="777" cy="449" r="17" fill="#2c7fb8"/>
+  <path d="M1023 432L1043 470L1003 470Z" fill="#2c7fb8"/><path d="M1073 390L1093 428L1053 428Z" fill="#2c7fb8"/><path d="M1110 455L1130 493L1090 493Z" fill="#2c7fb8"/>
+  <path d="M838 363C857 423 856 501 833 564" class="thinBoundary"/><path d="M913 359C936 425 940 503 925 567" class="boundary"/>
+  <path d="M826 469L848 491M848 469L826 491" stroke="#111" stroke-width="4" stroke-linecap="round"/>
+  <text x="810" y="520" class="math">θ₀</text>
+  <circle cx="929" cy="472" r="12" fill="#111"/>
+  <path d="M857 474L911 474" class="black" marker-end="url(#bBlack)"/>
+  <text x="885" y="456" text-anchor="middle" class="txt small">drift</text>
+  <text x="1015" y="548" class="txt body">degradation</text>
+
+  <!-- c: dual control, minimal text -->
+  <text x="1226" y="54" class="txt panel">c</text>
+  <text x="1500" y="54" text-anchor="middle" class="txt head">FedDR: dual reliability control</text>
+  <text x="1250" y="93" class="txt body">Short-term reliability</text>
+  <text x="1698" y="93" text-anchor="end" class="txt body">Long-term stability</text>
+  <circle cx="1318" cy="150" r="17" fill="#2c7fb8"/><circle cx="1365" cy="126" r="17" fill="#2c7fb8"/><circle cx="1413" cy="168" r="17" fill="#2c7fb8"/>
+  <path d="M1325 243L1345 281L1305 281Z" fill="#2c7fb8"/><path d="M1383 222L1403 260L1363 260Z" fill="#2c7fb8"/>
+  <circle cx="1490" cy="157" r="17" fill="#111"/><path d="M1535 228L1555 266L1515 266Z" fill="#111"/>
+  <circle cx="1635" cy="140" r="17" fill="#2c7fb8"/><path d="M1642 229L1662 267L1622 267Z" fill="#2c7fb8"/>
+  <path d="M1440 86C1454 140 1455 215 1440 281" class="boundary"/>
+  <path d="M1490 157C1525 157 1556 147 1583 130" class="black" marker-end="url(#bBlack)"/>
+  <text x="1547" y="111" text-anchor="middle" class="txt small">DLRS: noise influence ↓</text>
+  <path d="M1600 310C1546 327 1488 330 1435 316" class="red" marker-end="url(#bRed)"/>
+  <text x="1517" y="349" text-anchor="middle" class="txt small">FSLR: boundary returns toward θ₀</text>
+  <path d="M1370 407L1630 407" class="black" marker-start="url(#bBlackBack)" marker-end="url(#bBlack)"/>
+  <text x="1500" y="391" text-anchor="middle" class="txt body">Mutual reinforcement</text>
+  <text x="1500" y="470" text-anchor="middle" class="txt body">less noise → less drift → stable adaptation</text>
+
+  <!-- Minimal shared legend -->
+  <circle cx="155" cy="664" r="14" fill="#d73027"/><path d="M203 649L219 679L187 679Z" fill="#d73027"/><text x="241" y="671" class="txt small">source</text>
+  <circle cx="374" cy="664" r="14" fill="#2c7fb8"/><path d="M422 649L438 679L406 679Z" fill="#2c7fb8"/><text x="460" y="671" class="txt small">target</text>
+  <circle cx="591" cy="664" r="14" fill="#111"/><path d="M639 649L655 679L623 679Z" fill="#111"/><text x="677" y="671" class="txt small">noise</text>
+  <path d="M770 664L841 664" class="boundary"/><text x="861" y="671" class="txt small">decision boundary</text>
+  <path d="M1082 664L1153 664" class="black" marker-start="url(#bBlackBack)" marker-end="url(#bBlack)"/><text x="1174" y="671" class="txt small">reinforcement</text>
+</svg>

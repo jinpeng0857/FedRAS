@@ -1,0 +1,7 @@
+"dataset","checkpoint","method","protocol","mean_accuracy","total_correct","total_samples","blocks"
+"cifar100","fedacg_run1","CoTTA","domain_wise","0.590893","88634","150000","15"
+"cifar100","fedacg_run1","CoTTA","continual","0.561782","252802","450000","45"
+"cifar100","fedacg_run1","PeTTA","domain_wise","0.542787","81418","150000","15"
+"cifar100","fedacg_run1","PeTTA","continual","0.52006","234027","450000","45"
+"cifar100","fedacg_run2","CoTTA","domain_wise","0.585113","87767","150000","15"
+"cifar100","fedacg_run2","CoTTA","continual","0.5509","247905","450000","45"

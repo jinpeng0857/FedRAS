@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="180mm" height="72mm" viewBox="0 0 1800 720">
+  <title>Overall framework of FedDR</title>
+  <desc>Three-stage horizontal framework showing federated initialization, continual test-time adaptation with an external state loop, and secondary clean or revisit evaluation.</desc>
+  <defs>
+    <style>
+      .txt{font-family:Arial,Helvetica,sans-serif;fill:#111}.title{font-size:28px;font-weight:700}.stage{font-size:19px;font-weight:700}.head{font-size:22px;font-weight:700}.body{font-size:17px}.small{font-size:14px}.math{font-family:"Times New Roman",serif;font-size:22px;font-style:italic;fill:#111}.evalHead{font-family:Arial,Helvetica,sans-serif;fill:#444;font-size:17px;font-weight:700}
+      .box{fill:#fff;stroke:#111;stroke-width:3}.module{fill:#fff;stroke:#111;stroke-width:3;stroke-dasharray:11 8}.soft{fill:#f7f7f7;stroke:#111;stroke-width:3}.evalbox{fill:#fff;stroke:#888;stroke-width:2}
+      .black{fill:none;stroke:#111;stroke-width:3.5;stroke-linecap:round;stroke-linejoin:round}.red{fill:none;stroke:#d73027;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.blue{fill:none;stroke:#2c7fb8;stroke-width:4.5;stroke-linecap:round;stroke-linejoin:round}.loop{fill:none;stroke:#2c7fb8;stroke-width:3.4;stroke-dasharray:10 8;stroke-linecap:round;stroke-linejoin:round}.grad{fill:none;stroke:#111;stroke-width:2.7;stroke-dasharray:8 7;stroke-linecap:round;stroke-linejoin:round}.eval{fill:none;stroke:#888;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+    </style>
+    <marker id="aBlack" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#111"/></marker>
+    <marker id="aRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#d73027"/></marker>
+    <marker id="aBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#2c7fb8"/></marker>
+    <marker id="aGray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#888"/></marker>
+  </defs>
+  <path d="M0 0H1800V720H0Z" fill="#fff"/>
+
+  <text x="900" y="34" text-anchor="middle" class="txt title">Overall framework of FedDR</text>
+  <text x="42" y="76" class="txt stage">I  Federated initialization</text>
+  <text x="515" y="76" class="txt stage">II  Continual test-time adaptation</text>
+  <text x="1580" y="76" class="txt stage">III  Evaluation</text>
+  <path d="M42 88H470M515 88H1530M1580 88H1760" stroke="#111" stroke-width="2"/>
+
+  <!-- Stage I: a compact vertical initialization chain -->
+  <text x="47" y="124" class="txt head">Federated Source Data</text>
+  <circle cx="75" cy="156" r="14" fill="#d73027"/><circle cx="112" cy="143" r="14" fill="#d73027"/><circle cx="149" cy="174" r="14" fill="#d73027"/>
+  <path d="M190 149L206 179L174 179Z" fill="#d73027"/><path d="M250 158L266 188L234 188Z" fill="#d73027"/>
+  <path d="M228 220V237" class="red" marker-end="url(#aRed)"/>
+  <text x="228" y="258" text-anchor="middle" class="txt head">Federated Pre-training</text>
+  <path d="M228 268V280" class="red" marker-end="url(#aRed)"/>
+  <text x="228" y="303" text-anchor="middle" class="txt head">Anchor Model</text>
+  <text x="228" y="326" text-anchor="middle" class="math">θ₀</text>
+
+  <!-- Anchor initialization is a solid data/state transfer; restoration reference is local to FSLR -->
+  <path d="M300 315C380 317 475 338 558 354" class="red" marker-end="url(#aRed)"/>
+  <text x="438" y="322" text-anchor="middle" class="txt small" fill="#d73027">initialize θₜ</text>
+  <path d="M1453 300V352" class="red" stroke-dasharray="10 8" marker-end="url(#aRed)"/>
+  <text x="1453" y="281" text-anchor="middle" class="txt small" fill="#d73027">anchor reference θ₀</text>
+
+  <!-- Stage II: the current target batch enters the model -->
+  <path d="M42 348H470" stroke="#111" stroke-width="2"/>
+  <text x="42" y="340" class="txt stage">Continual target stream</text>
+  <rect x="42" y="354" width="382" height="124" rx="18" class="box"/>
+  <text x="66" y="388" class="txt head">Client Test Stream</text>
+  <text x="80" y="434" class="math">B₁</text><path d="M121 428L166 428" class="blue" marker-end="url(#aBlue)"/><text x="185" y="434" class="math">B₂</text><path d="M229 428L274 428" class="blue" marker-end="url(#aBlue)"/><text x="294" y="434" class="txt body">···</text><path d="M332 428L377 428" class="blue" marker-end="url(#aBlue)"/><text x="390" y="434" class="math">Bₜ</text>
+
+  <rect x="507" y="354" width="245" height="124" rx="18" class="soft"/>
+  <text x="629" y="390" text-anchor="middle" class="txt head">Test-time Model</text>
+  <text x="629" y="425" text-anchor="middle" class="txt body">Feature Extractor → Predict</text>
+  <text x="629" y="456" text-anchor="middle" class="math">ŷₜ</text>
+  <path d="M424 416L507 416" class="blue" marker-end="url(#aBlue)"/>
+
+  <rect x="820" y="354" width="216" height="124" rx="18" class="module"/>
+  <text x="928" y="395" text-anchor="middle" class="txt head">DLRS</text>
+  <text x="928" y="428" text-anchor="middle" class="txt body">Short-term reliability</text>
+  <text x="928" y="458" text-anchor="middle" class="txt small">sample weighting</text>
+  <path d="M752 416L820 416" class="blue" marker-end="url(#aBlue)"/>
+
+  <rect x="1084" y="354" width="216" height="124" rx="18" class="module"/>
+  <text x="1192" y="395" text-anchor="middle" class="txt head">Reliable Update</text>
+  <text x="1192" y="428" text-anchor="middle" class="txt body">reliability-aware update</text>
+  <text x="1192" y="458" text-anchor="middle" class="math">θₜ → θₜ₊₁</text>
+  <path d="M1036 416L1084 416" class="blue" marker-end="url(#aBlue)"/>
+
+  <!-- Parameter update acts on the test-time model; it is not a duplicate forward-flow arrow -->
+  <path d="M1134 478C1076 524 850 524 734 478" class="grad" marker-end="url(#aBlack)"/>
+  <text x="934" y="542" text-anchor="middle" class="txt small">parameter update</text>
+
+  <rect x="1345" y="354" width="216" height="124" rx="18" class="module"/>
+  <text x="1453" y="395" text-anchor="middle" class="txt head">FSLR</text>
+  <text x="1453" y="428" text-anchor="middle" class="txt body">Long-term drift control</text>
+  <text x="1453" y="458" text-anchor="middle" class="txt small">(sparse restoration)</text>
+  <path d="M1300 416L1345 416" class="blue" marker-end="url(#aBlue)"/>
+
+  <rect x="1590" y="354" width="180" height="124" rx="18" class="soft"/>
+  <text x="1680" y="395" text-anchor="middle" class="txt head">Adapted Model</text>
+  <text x="1680" y="428" text-anchor="middle" class="math">θₜ₊₁</text>
+  <text x="1680" y="458" text-anchor="middle" class="txt small">stabilized state</text>
+  <path d="M1561 416L1590 416" class="blue" marker-end="url(#aBlue)"/>
+
+  <!-- Evaluation is deliberately secondary to the method path -->
+  <rect x="1640" y="505" width="130" height="80" rx="15" class="evalbox"/>
+  <text x="1705" y="537" text-anchor="middle" class="evalHead">Evaluation</text>
+  <text x="1705" y="561" text-anchor="middle" class="txt small" fill="#555">Clean / Revisit</text>
+  <path d="M1705 478V505" class="eval" marker-end="url(#aGray)"/>
+
+  <!-- External continual state loop: adapted model -> next target batch -->
+  <path d="M1590 458C1538 548 1320 592 1040 607C710 625 460 604 305 532C274 518 250 497 250 478" class="loop" marker-end="url(#aBlue)"/>
+  <text x="1010" y="596" text-anchor="middle" class="txt small" fill="#2c7fb8">next target batch</text>
+
+  <!-- Unified legend: each blue encoding has a distinct role -->
+  <circle cx="370" cy="675" r="12" fill="#d73027"/><text x="393" y="681" class="txt small">source / anchor</text>
+  <path d="M620 675L680 675" class="blue" marker-end="url(#aBlue)"/><text x="701" y="681" class="txt small">target data flow</text>
+  <path d="M930 675L990 675" class="loop" marker-end="url(#aBlue)"/><text x="1011" y="681" class="txt small">continual state loop</text>
+  <path d="M1280 675L1340 675" class="grad" marker-end="url(#aBlack)"/><text x="1361" y="681" class="txt small">parameter update</text>
+</svg>

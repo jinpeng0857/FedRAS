@@ -1,0 +1,350 @@
+diff --git a/engine.py b/engine.py
+index fc6df40..749a325 100644
+--- a/engine.py
++++ b/engine.py
+@@ -487,6 +487,8 @@ def build_main_adapter(
+             petta_lambda=args.petta_lambda,
+             anchor_weight=args.petta_anchor_weight,
+             petta_alpha=args.petta_alpha,
++            regularizer=args.petta_regularizer,
++            loss_func=args.petta_loss_func,
+             input_mean=DATASET_STATS[args.dataset]["mean"],
+             input_std=DATASET_STATS[args.dataset]["std"],
+         )
+diff --git a/evaluator/engine.py b/evaluator/engine.py
+index 7ac7472..ae500b0 100644
+--- a/evaluator/engine.py
++++ b/evaluator/engine.py
+@@ -487,6 +487,8 @@ def build_main_adapter(
+             petta_lambda=args.petta_lambda,
+             anchor_weight=args.petta_anchor_weight,
+             petta_alpha=args.petta_alpha,
++            regularizer=args.petta_regularizer,
++            loss_func=args.petta_loss_func,
+             input_mean=DATASET_STATS[args.dataset]["mean"],
+             input_std=DATASET_STATS[args.dataset]["std"],
+         )
+diff --git a/test/comparison_all.sh b/test/comparison_all.sh
+index 3d3fc04..eb179c4 100644
+--- a/test/comparison_all.sh
++++ b/test/comparison_all.sh
+@@ -168,6 +168,14 @@ run_fedacg_comparisons() {
+     --sar_reset_threshold 0.2 \
+     --sar_sam_rho 0.05
+ 
++  # CoTTA: mean teacher, confidence-gated augmentation averaging and restoration.
++  run_tta "$federated_method" "$checkpoint" "$anchor_key" cotta \
++    "$statistics_path" "$output_dir/cifar100_${federated_method}_cotta.json" \
++    --cotta_mt_alpha 0.999 \
++    --cotta_restore_probability 0.01 \
++    --cotta_anchor_confidence 0.72 \
++    --cotta_augmentation_count 32
++
+   # Unified RoTTA: robust BN, class-balanced memory and EMA teacher.
+   run_tta "$federated_method" "$checkpoint" "$anchor_key" rotta \
+     "$statistics_path" "$output_dir/cifar100_${federated_method}_rotta.json" \
+diff --git a/test/tta_baselines.py b/test/tta_baselines.py
+index 3a9baf8..5056d4f 100644
+--- a/test/tta_baselines.py
++++ b/test/tta_baselines.py
+@@ -439,7 +439,7 @@ def _strong_tensor_augment(images, mean=(0.5071, 0.4867, 0.4408), std=(0.2675, 0
+         shear=[0.0, 0.0],
+         interpolation=InterpolationMode.BILINEAR,
+     )
+-    augmented = TF.center_crop(augmented, [32, 32])
++    augmented = TF.center_crop(augmented, list(images.shape[-2:]))
+     flip = torch.rand(images.size(0), device=images.device) < 0.5
+     augmented[flip] = augmented[flip].flip(-1)
+     augmented = (augmented + torch.randn_like(augmented) * 0.005).clamp(0.0, 1.0)
+@@ -617,7 +617,7 @@ class PeTTAAdapter(RoTTAAdapter):
+                     parameter.reshape(1, -1), anchor.reshape(1, -1), dim=1
+                 ).mean()
+             else:
+-                term = (parameter - anchor).square().mean()
++                term = (parameter - anchor).square().sum()
+             value = term if value is None else value + term
+             count += 1
+         if value is None or count == 0:
+@@ -630,30 +630,47 @@ class PeTTAAdapter(RoTTAAdapter):
+         if not values:
+             return None
+         data = torch.stack(values)
+-        ages_tensor = data.new_tensor(ages)
++        # The prototype controller uses eval-mode features, before this update.
++        self.model_ema.eval()
++        with torch.no_grad():
++            prototype_logits, teacher_features = self._features(self.model_ema, data)
++        self.model.train()
++        self.model_ema.train()
++        self.model_init.train()
+         with torch.no_grad():
+-            teacher_logits, teacher_features = self._features(self.model_ema, data)
++            teacher_logits = self.model_ema(data)
+             initial_logits = self.model_init(data)
+         original_logits, _ = self._features(self.model, data)
+-        student_logits, _ = self._features(self.model, _strong_tensor_augment(data))
+-        pseudo = teacher_logits.argmax(1)
+-        divergences = []
++        student_logits, _ = self._features(
++            self.model, _strong_tensor_augment(data, self.input_mean, self.input_std)
++        )
++        # Inference and post-stream evaluation must not update RobustBN buffers.
++        self.model.eval()
++        self.model_ema.eval()
++        self.model_init.eval()
++        pseudo = prototype_logits.argmax(1)
++        classes = pseudo.unique()
++        # PeTTA Alg. 1: compare the stored target prototypes with the FIXED
++        # source prototypes, then update the target prototypes for the next step.
++        # Comparing a new batch against the moving target instead freezes the
++        # teacher immediately when a source variance is small.
++        raw_divergence = (
++            (self.current_prototypes[classes] - self.source_mean[classes]).square()
++            / (self.source_variance[classes] + 1e-6)
++        ).mean().detach()
+         for class_id in pseudo.unique().tolist():
+             mask = pseudo == int(class_id)
+             current_mean = teacher_features[mask].mean(0)
+-            divergences.append(
+-                ((current_mean - self.current_prototypes[class_id]).square()
+-                 / self.source_variance[class_id]).mean()
+-            )
+             self.current_prototypes[class_id] = (
+                 0.95 * self.current_prototypes[class_id]
+                 + 0.05 * current_mean.detach()
+             )
+-        raw_divergence = torch.stack(divergences).mean() if divergences else data.new_zeros(())
+-        divergence = (1.0 - torch.exp(-raw_divergence)).detach().clamp(0.0, 1.0)
++        retention = torch.exp(-raw_divergence)
++        divergence = -torch.expm1(-raw_divergence)
+         self.last_divergence = float(divergence.cpu())
+         adaptive_lambda = self.lambda_0 * divergence
+-        adaptive_alpha = self.alpha_0 * (1.0 - divergence)
++        # Avoid cancellation in 1 - (1 - exp(-d)) at large finite d.
++        adaptive_alpha = self.alpha_0 * retention
+         if self.loss_func == "sce":
+             teacher_prob = teacher_logits.softmax(1)
+             original_prob = original_logits.softmax(1)
+@@ -764,7 +781,7 @@ class CoTTAAdapter(_ExternalAdapterBase):
+             kernel_size=[5, 5],
+             sigma=float(torch.empty(()).uniform_(0.001, 0.5)),
+         )
+-        augmented = TF.center_crop(augmented, [32, 32])
++        augmented = TF.center_crop(augmented, list(images.shape[-2:]))
+         if bool(torch.rand(()) < 0.5):
+             augmented = augmented.flip(-1)
+         augmented = (augmented + torch.randn_like(augmented) * 0.005).clamp(
+diff --git a/tests/test_petta_cotta_regression.py b/tests/test_petta_cotta_regression.py
+new file mode 100644
+index 0000000..03850e4
+--- /dev/null
++++ b/tests/test_petta_cotta_regression.py
+@@ -0,0 +1,208 @@
++"""Regression coverage for the PeTTA/CoTTA adaptation and launch contracts."""
++
++import copy
++import math
++from pathlib import Path
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++import unittest
++from unittest.mock import patch
++
++import torch
++from torch import nn
++
++import main_test
++from evaluator import engine
++from test.tta_baselines import (
++    CoTTAAdapter, PeTTAAdapter, RobustBatchNorm2d,
++    _strong_tensor_augment, configure_cotta_model, configure_rotta_model,
++)
++
++
++class TinyCNN(nn.Module):
++    def __init__(self, classes=2):
++        super().__init__()
++        self.conv = nn.Conv2d(3, 4, 1, bias=False)
++        self.bn = nn.BatchNorm2d(4)
++        self.pool = nn.AdaptiveAvgPool2d(1)
++        self.fc = nn.Linear(4, classes)
++
++    def forward(self, images):
++        return self.fc(self.pool(self.bn(self.conv(images))).flatten(1))
++
++
++class NoopRestorer:
++    def step(self):
++        return 0
++
++
++class PeTTARegressionTests(unittest.TestCase):
++    def setUp(self):
++        torch.manual_seed(17)
++
++    def adapter(self, **kwargs):
++        model = TinyCNN()
++        params, _ = configure_rotta_model(model)
++        return PeTTAAdapter(
++            model, torch.optim.SGD(params, lr=0.05), NoopRestorer(),
++            num_classes=2, source_mean=torch.zeros(2, 4),
++            source_variance=torch.ones(2, 4), update_frequency=4, **kwargs,
++        )
++
++    def test_first_update_starts_from_source_prototypes_and_updates_teacher(self):
++        adapter = self.adapter()
++        before = {n: p.clone() for n, p in adapter.model_ema.named_parameters()}
++        _, stats = adapter.adapt(torch.randn(4, 3, 32, 32))
++        self.assertTrue(stats['updated'])
++        self.assertEqual(adapter.last_divergence, 0.0)
++        self.assertAlmostEqual(adapter.nu, 0.001, places=8)
++        self.assertTrue(any(not torch.equal(before[n], p)
++                            for n, p in adapter.model_ema.named_parameters()))
++
++    def test_divergence_measures_stored_prototypes_against_fixed_source(self):
++        adapter = self.adapter()
++        adapter.current_prototypes.fill_(1.0)
++        adapter.adapt(torch.randn(4, 3, 32, 32))
++        self.assertAlmostEqual(adapter.last_divergence, 1 - math.exp(-1), places=5)
++        self.assertAlmostEqual(adapter.nu, 0.001 * math.exp(-1), places=8)
++
++    def test_update_adapts_robust_bn_in_student_teacher_and_anchor(self):
++        adapter = self.adapter()
++        models = [adapter.model, adapter.model_ema, adapter.model_init]
++        before = [m.bn.source_mean.clone() for m in models]
++        anchor_parameters = [p.clone() for p in adapter.model_init.parameters()]
++        adapter.adapt(torch.randn(4, 3, 32, 32) + 2)
++        for model, old_mean in zip(models, before):
++            self.assertIsInstance(model.bn, RobustBatchNorm2d)
++            self.assertFalse(torch.equal(old_mean, model.bn.source_mean))
++        self.assertTrue(all(torch.equal(a, b) for a, b in
++                            zip(anchor_parameters, adapter.model_init.parameters())))
++
++    def test_returns_pre_update_prediction_and_predict_does_not_change_bn(self):
++        adapter = self.adapter()
++        images = torch.randn(4, 3, 32, 32)
++        adapter.model_ema.eval()
++        with torch.no_grad():
++            expected = adapter.model_ema(images).clone()
++        logits, _ = adapter.adapt(images)
++        self.assertTrue(torch.equal(logits, expected))
++        state = copy.deepcopy(adapter.model_ema.state_dict())
++        adapter.predict(images)
++        self.assertTrue(all(torch.equal(v, adapter.model_ema.state_dict()[k])
++                            for k, v in state.items()))
++
++    def test_update_uses_configured_image_normalization(self):
++        mean, std = (0.1, 0.2, 0.3), (0.8, 0.7, 0.6)
++        adapter = self.adapter(input_mean=mean, input_std=std)
++        # Seed the actual augmentation independently to compare the student input.
++        images = torch.randn(4, 3, 32, 32)
++        adapter.memory.add(images[0], 0, 0.1)
++        data = torch.stack(adapter.memory.get()[0])
++        torch.manual_seed(24)
++        expected = _strong_tensor_augment(data, mean, std)
++        inputs = []
++        handle = adapter.model.register_forward_pre_hook(
++            lambda _model, args: inputs.append(args[0].detach().clone()))
++        try:
++            torch.manual_seed(24)
++            adapter._update_model()
++        finally:
++            handle.remove()
++        self.assertTrue(torch.allclose(inputs[-1], expected))
++
++    def test_l2_regularization_uses_official_sum_per_parameter_tensor(self):
++        adapter = self.adapter(regularizer='l2')
++        with torch.no_grad():
++            adapter.model.bn.weight.add_(1)
++            adapter.model.bn.bias.add_(1)
++        self.assertEqual(adapter._regularizer().item(), 4.0)
++
++    def test_factory_applies_requested_loss_and_regularizer(self):
++        argv = ['audit', '--model_path', 'unused.pt', '--statistics_path', 'unused.pt',
++                '--tta_method', 'petta', '--output_path', 'unused.json',
++                '--petta_regularizer', 'l2', '--petta_loss_func', 'ce']
++        with patch.object(sys, 'argv', argv):
++            args = main_test.parse_args()
++        args = main_test.apply_official_baseline_config(args)
++        moments = (torch.zeros(100, 4), torch.ones(100, 4))
++        with patch.object(engine, 'load_deployment_model', return_value=(TinyCNN(100), 'resnet18')), \
++             patch.object(engine, 'load_petta_statistics', return_value=moments):
++            adapter, _ = engine.build_main_adapter(args, torch.device('cpu'), torch.ones(4), {}, {})
++        self.assertEqual(adapter.regularizer, 'l2')
++        self.assertEqual(adapter.loss_func, 'ce')
++
++    def test_small_stream_flushes_remaining_memory_once(self):
++        adapter = self.adapter()
++        _, stats = adapter.adapt(torch.randn(2, 3, 32, 32))
++        self.assertFalse(stats['updated'])
++        self.assertTrue(adapter.finalize())
++        self.assertFalse(adapter.finalize())
++
++
++class CoTTARegressionTests(unittest.TestCase):
++    def adapter(self, **kwargs):
++        torch.manual_seed(19)
++        model = TinyCNN()
++        params, _ = configure_cotta_model(model)
++        return CoTTAAdapter(model, torch.optim.SGD(params, lr=0.05), NoopRestorer(), **kwargs)
++
++    def test_both_augmentations_preserve_64_pixel_inputs(self):
++        images = torch.randn(2, 3, 64, 64)
++        adapter = self.adapter()
++        for augmented in [adapter._augment(images), _strong_tensor_augment(images)]:
++            self.assertEqual(augmented.shape, images.shape)
++            self.assertTrue(torch.isfinite(augmented).all())
++
++    def test_low_confidence_uses_augmented_teacher_and_updates_ema(self):
++        adapter = self.adapter(anchor_confidence=1.1, augmentation_count=2, restore_probability=0)
++        images = torch.randn(4, 3, 32, 32)
++        teacher = copy.deepcopy(adapter.model_ema.state_dict())
++        anchor = copy.deepcopy(adapter.model_anchor.state_dict())
++        torch.manual_seed(23)
++        with torch.no_grad():
++            expected = torch.stack([adapter.model_ema(adapter._augment(images)) for _ in range(2)]).mean(0)
++        torch.manual_seed(23)
++        logits, stats = adapter.adapt(images)
++        self.assertTrue(torch.allclose(logits, expected))
++        self.assertTrue(stats['teacher_augmentation_used'])
++        self.assertTrue(stats['updated'])
++        self.assertTrue(any(not torch.equal(v, adapter.model_ema.state_dict()[k])
++                            for k, v in teacher.items()))
++        self.assertTrue(all(torch.equal(v, adapter.model_anchor.state_dict()[k])
++                            for k, v in anchor.items()))
++
++    def test_full_stochastic_restore_returns_student_to_source(self):
++        adapter = self.adapter(augmentation_count=0, restore_probability=1)
++        _, stats = adapter.adapt(torch.randn(4, 3, 32, 32))
++        self.assertGreater(stats['stochastic_restored_scalars'], 0)
++        self.assertTrue(all(torch.equal(p, adapter.source_state[n])
++                            for n, p in adapter.model.named_parameters()))
++
++    @unittest.skipUnless(shutil.which('bash'), 'requires Bash for the real launch script')
++    def test_comparison_script_launches_both_methods_for_all_three_checkpoints(self):
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp)
++            (root / 'test').mkdir()
++            (root / 'bin').mkdir()
++            script = root / 'test/comparison_all.sh'
++            script.write_bytes((Path(__file__).resolve().parents[1] / 'test/comparison_all.sh').read_bytes())
++            capture = root / 'commands.txt'
++            fake_python = root / 'bin/python'
++            fake_python.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$CAPTURE"\n', encoding='utf-8')
++            fake_python.chmod(0o755)
++            import os
++            env = dict(os.environ, PATH=str(root / 'bin') + ':' + os.environ['PATH'],
++                       CAPTURE=str(capture), FORCE_RERUN='1')
++            subprocess.run(['bash', str(script)], env=env, check=True, capture_output=True)
++            calls = [shlex.split(line) for line in capture.read_text().splitlines()]
++            for method in ['petta', 'cotta']:
++                launches = [c for c in calls if c[:1] == ['main_test.py'] and
++                            '--tta_method' in c and c[c.index('--tta_method') + 1] == method]
++                self.assertEqual(len(launches), 3, method)
++
++
++if __name__ == '__main__':
++    unittest.main()
