@@ -4,23 +4,25 @@ set -euo pipefail
 # Tables refer to FEDRAS (2).pdf. Use --dry-run to print the resolved commands.
 usage() {
   cat <<'USAGE'
-Usage: bash run_fedras_experiments.sh {components|appendix-f|random|fixed|cost|sensitivity|all} [--dry-run]
+Usage: bash run_fedras_experiments.sh {components|appendix-f|random|fixed|cost|sensitivity|tiny-batch-mean|all} [--dry-run]
   components    Tables 6, 7, 12 and 13, three checkpoints
   appendix-f    Table 13 only, run1
   random        Table 8, displacement-reference recording and matched random replay
   fixed         Table 8, fixed rho 0.02/0.05/0.10, three checkpoints
   cost          Table 9, run1, three measured runs with in-process warm-up
   sensitivity   Table 11, six non-default points on run1
-  all           All formal groups, sharing the component trajectories for Table 13
+  tiny-batch-mean  Tiny-ImageNet-C, ResNet-18, one FedRAS batch-mean run
+  all           All CIFAR-100-C groups, sharing the component trajectories for Table 13
 Overrides: REVISION_ROOT, ASSET_ROOT, OUTPUT_ROOT, PYTHON_BIN, DEVICE, DATA_ROOT,
            CLEAN_ROOT, CKPT1..3, COV_PATH1..3, FIXED_STRENGTH, SELECTION_SEED
+Tiny overrides: TINY_DATA_ROOT, TINY_CLEAN_ROOT, TINY_CKPT, TINY_COV_PATH
 USAGE
 }
 
 stage=${1:-}
 case "$stage" in
   -h|--help) usage; exit 0 ;;
-  components|appendix-f|random|fixed|cost|sensitivity|all) ;;
+  components|appendix-f|random|fixed|cost|sensitivity|tiny-batch-mean|all) ;;
   *) usage >&2; exit 2 ;;
 esac
 dry_run=false
@@ -50,6 +52,13 @@ statistics=("" "${COV_PATH1:-"$asset_root/test/outputs/fedacg_run1_statistics.pt
   "${COV_PATH3:-"$asset_root/test/outputs/fedacg_run3_statistics.pt"}")
 indices=(1)
 case "$stage" in components|random|fixed|all) indices=(1 2 3) ;; esac
+if [[ "$stage" == tiny-batch-mean ]]; then
+  data_root=${TINY_DATA_ROOT:-"$asset_root/data/Tiny-ImageNet-C"}
+  clean_root=${TINY_CLEAN_ROOT:-"$asset_root/data/tiny-imagenet-200"}
+  tiny_model_root="$asset_root/train/results/tiny-imagenet_100clients_alpha0.3_equal/fedacg_resnet18"
+  checkpoints[1]=${TINY_CKPT:-"$tiny_model_root/tiny_imagenet_resnet18_fedacg_20260907_seed42/model_round499.pt"}
+  statistics[1]=${TINY_COV_PATH:-"$asset_root/test/outputs/tiny_resnet18_unified_20260907/statistics.pt"}
+fi
 
 if [[ "$stage" == cost || "$stage" == all ]]; then
   if [[ "$device" != cuda && ! "$device" =~ ^cuda:[0-9]+$ ]]; then
@@ -59,13 +68,23 @@ if [[ "$stage" == cost || "$stage" == all ]]; then
 fi
 
 if ! "$dry_run"; then
-  inputs=("$runner" "$data_root/labels.npy")
-  for split in train test meta; do inputs+=("$clean_root/cifar-100-python/$split"); done
+  inputs=("$runner")
   corruptions=(gaussian_noise shot_noise impulse_noise defocus_blur glass_blur motion_blur
     zoom_blur snow frost fog brightness contrast elastic_transform pixelate jpeg_compression)
-  for corruption in "${corruptions[@]}"; do inputs+=("$data_root/$corruption.npy"); done
-  for index in "${indices[@]}"; do inputs+=("${checkpoints[index]}" "${statistics[index]}"); done
   missing=()
+  if [[ "$stage" == tiny-batch-mean ]]; then
+    inputs+=("$root/scripts/run_tiny_ordered_revision_case.py")
+    directories=("$clean_root/train" "$clean_root/val")
+    for corruption in "${corruptions[@]}"; do directories+=("$data_root/$corruption/5"); done
+    for directory in "${directories[@]}"; do
+      [[ -d "$directory" && -r "$directory" ]] || missing+=("$directory")
+    done
+  else
+    inputs+=("$data_root/labels.npy")
+    for split in train test meta; do inputs+=("$clean_root/cifar-100-python/$split"); done
+    for corruption in "${corruptions[@]}"; do inputs+=("$data_root/$corruption.npy"); done
+  fi
+  for index in "${indices[@]}"; do inputs+=("${checkpoints[index]}" "${statistics[index]}"); done
   for input in "${inputs[@]}"; do
     [[ -f "$input" && -r "$input" ]] || missing+=("$input")
   done
@@ -108,7 +127,11 @@ run_trial() (
   local index=$1 name=$2
   shift 2
   local trial_dir="$output_root/$name"
-  local command=("$python_bin" -u "$runner" "${common[@]}"
+  local entry=("$runner")
+  if [[ "$stage" == tiny-batch-mean ]]; then
+    entry=("$root/scripts/run_tiny_ordered_revision_case.py" "$runner" "$trial_dir")
+  fi
+  local command=("$python_bin" -u "${entry[@]}" "${common[@]}"
     --model_path "${checkpoints[index]}" --statistics_path "${statistics[index]}"
     --output_path "$trial_dir/result.json" "$@")
   if "$dry_run"; then
@@ -141,6 +164,16 @@ run_trial() (
   "${command[@]}" 2>&1 | tee "$trial_dir/run.log"
   printf '%s\n' "$invocation" > "$trial_dir/complete"
 )
+
+if [[ "$stage" == tiny-batch-mean ]]; then
+  common=(
+    --dataset tiny-imagenet --federated_method fedacg --anchor_key lookahead_anchor
+    --tta_method feddr --device "$device" --cifar_c_path "$data_root"
+    --clean_data_root "$clean_root" --batch_size 128 --seed 0 --num_workers 2
+    --max_batches -1 --adapt_lr 0.001 --dlrs_batch_mean
+  )
+  run_trial 1 tiny-batch-mean/resnet18
+fi
 
 run_components() {
   local index=$1 group=$2

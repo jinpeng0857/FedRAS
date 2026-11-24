@@ -32,6 +32,15 @@ A full run requires CIFAR-100, CIFAR-100-C, and readable checkpoints with matchi
 - [Revised experiment configurations and command generation](configs/revision_20261102/README.md)
 - [Additional supplementary experiments](supplement_experiments/README.md)
 
+Run the Tiny-ImageNet-C normalization comparison arm with the FedACG ResNet-18 checkpoint and its matching source statistics.
+
+```bash
+bash run_fedras_experiments.sh tiny-batch-mean --dry-run
+bash run_fedras_experiments.sh tiny-batch-mean
+```
+
+This runs one full evaluation with the mean of the weighted sample losses. For comparison, use a weight-normalized FedRAS result with the same checkpoint, data order, and evaluation settings. The launcher preserves the historical Tiny-ImageNet-C sample order and records its hashes. Use `TINY_CKPT`, `TINY_COV_PATH`, `TINY_DATA_ROOT`, and `TINY_CLEAN_ROOT` to point to the experiment assets.
+
 ## Tests
 
 Run the DLRS and sparse-restoration unit tests from the repository root.

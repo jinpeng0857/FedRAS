@@ -386,9 +386,16 @@ def parse_args():
             "cues and also sends the reduced reliability signal to DSR/FSLR."
         ),
     )
-    parser.add_argument(
+    dlrs_normalization = parser.add_mutually_exclusive_group()
+    dlrs_normalization.add_argument(
         "--dlrs_normalize_by_weight",
         action="store_true",
+    )
+    dlrs_normalization.add_argument(
+        "--dlrs_batch_mean",
+        dest="dlrs_normalize_by_weight",
+        action="store_false",
+        help="Use the mean of the weighted sample losses without weight-sum rescaling.",
     )
     parser.add_argument(
         "--dlrs_weight_mode",
@@ -737,8 +744,9 @@ def apply_feddr_primary_config(args, public_tta_method):
     if getattr(args, "feddr_bn_scope", "method_default") == "method_default":
         args.feddr_bn_scope = FEDDR_PRIMARY_BN_SCOPE
 
-    args.dlrs_normalize_by_weight = FEDDR_PRIMARY_NORMALIZE_BY_WEIGHT
     explicit_options = getattr(args, "_explicit_cli_options", set())
+    if "--dlrs_batch_mean" not in explicit_options:
+        args.dlrs_normalize_by_weight = FEDDR_PRIMARY_NORMALIZE_BY_WEIGHT
     if "--dlrs_weight_mode" not in explicit_options:
         args.dlrs_weight_mode = FEDDR_PRIMARY_WEIGHT_MODE
     args.disable_fslr_reliability_gate = (
@@ -963,6 +971,7 @@ def run():
                 args, "dlrs_sample_reliability_mode", "full"
             ),
             "dlrs_cue_ablation": getattr(args, "dlrs_cue_ablation", "full"),
+            "dlrs_normalize_by_weight": args.dlrs_normalize_by_weight,
             "cola_weight_margin": getattr(args, "cola_weight_margin", None),
             "cola_shift_detection_threshold": getattr(
                 args, "cola_shift_detection_threshold", None
