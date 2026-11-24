@@ -1,0 +1,79 @@
+{
+  "arms": [
+    {
+      "id": "tiny_collapse",
+      "status": "blocked_assets_and_entrypoint",
+      "activation": "optional_diagnostic",
+      "checkpoints": [
+        "tiny_rn18",
+        "tiny_rn34"
+      ],
+      "fedras": false,
+      "cli": {},
+      "blockers": [
+        "Bind actual Tiny checkpoints/statistics and clean/corruption paths before use.",
+        "Use scripts/run_tiny_ordered_revision_case.py wrapper in FEDEATA to restore historical RandomState(0) permutation and record sample hashes. Do not use CIFAR mechanism controller binding for Tiny; its labels.npy/.npy assumptions are CIFAR-specific."
+      ],
+      "design": [
+        {
+          "backbone": "resnet34",
+          "method": "tent",
+          "learning_rates": [
+            0.001
+          ],
+          "execution": "DW plus 3-cycle continual",
+          "purpose": "locate collapse onset"
+        },
+        {
+          "backbone": "resnet18",
+          "method": "tent",
+          "learning_rates": [
+            0.00025,
+            0.001
+          ],
+          "execution": "DW plus 3-cycle continual",
+          "reuse": "reuse existing 1e-3 result only after identity check"
+        }
+      ],
+      "diagnostics": [
+        "per-block acc",
+        "mean prediction entropy",
+        "BN drift",
+        "reset count",
+        "sample-order hashes"
+      ],
+      "asr_optional": "Audit actual ASR backend/reset/consolidation and optimizer path before claiming ASR equals Tent. Reset count zero alone is insufficient."
+    },
+    {
+      "id": "order_3x3",
+      "status": "blocked_implementation",
+      "activation": "optional_strengthening_18_trajectories",
+      "checkpoints": [
+        "run1",
+        "run2",
+        "run3"
+      ],
+      "fedras": false,
+      "cli": {},
+      "blockers": [
+        "Need explicit corruption-order permutation hook plus hash recording; no supported order flag assumed."
+      ],
+      "design": {
+        "methods": [
+          "fedras",
+          "asr"
+        ],
+        "order_seeds": [
+          1,
+          2,
+          3
+        ],
+        "checkpoint_count": 3,
+        "trajectory_count": 18,
+        "evaluation_seed": 0,
+        "learning_rate": "same selected common-lr protocol",
+        "analysis": "checkpoint x order paired differences; nested/repeated structure, never 9 independent training seeds"
+      }
+    }
+  ]
+}

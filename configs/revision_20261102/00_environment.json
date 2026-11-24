@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-02",
+  "source_solution": "user attachment 827661ed-6125-4afb-a3f5-e01aa09e2e93",
+  "verified_runtime_root": "D:/dp1/FEDEATA-revision-20261018",
+  "entrypoint": "scripts/revision_20261018/run_case.py",
+  "asset_root_example": "/mnt/sda/PythonProject/CJP_project/FEDEATA",
+  "output_root_example": "output/revision_20261102",
+  "corruption_path": "data/CIFAR-100-C",
+  "clean_path": "data",
+  "anchors": {
+    "run1": {
+      "model_path": "train/results/cifar100_100clients_alpha0.3_equal/fedacg_resnet18/cifar100_resnet18_run1/model_round499.pt",
+      "statistics_path": "test/outputs/fedacg_run1_statistics.pt",
+      "eata_statistics_path": "test/outputs/fedacg_run1_eata_statistics.pt",
+      "training_seed_provenance": "unknown"
+    },
+    "run2": {
+      "model_path": "train/results/cifar100_100clients_alpha0.3_equal/fedacg_resnet18/run2/model_round499.pt",
+      "statistics_path": "test/outputs/fedacg_run2_statistics.pt",
+      "eata_statistics_path": "test/outputs/fedacg_run2_eata_statistics.pt",
+      "training_seed_provenance": "unknown"
+    },
+    "run3": {
+      "model_path": "train/results/cifar100_100clients_alpha0.3_equal/fedacg_resnet18/run3/model_round499.pt",
+      "statistics_path": "test/outputs/fedacg_run3_statistics.pt",
+      "eata_statistics_path": "test/outputs/fedacg_run3_eata_statistics.pt",
+      "training_seed_provenance": "unknown"
+    }
+  },
+  "evaluation_cli": {
+    "--dataset": "cifar100",
+    "--federated_method": "fedacg",
+    "--anchor_key": "lookahead_anchor",
+    "--batch_size": 128,
+    "--num_workers": 2,
+    "--seed": 0,
+    "--max_batches": -1,
+    "--review_continual_only": true
+  },
+  "fedras_cli": {
+    "--tta_method": "dlrs_fslr",
+    "--revision-track": "shared",
+    "--revision-controller": "disagreement",
+    "--revision-ranking": "drift_only",
+    "--adapt_lr": 0.001,
+    "--feddr_bn_scope": "excluding_layer4",
+    "--dlrs_ablation_variant": "anchor_only",
+    "--dlrs_sample_reliability_mode": "entropy",
+    "--dlrs_weight_mode": "sample_only",
+    "--dlrs_hybrid_threshold": 0.0,
+    "--dlrs_anchor_rectify_beta": 0.3,
+    "--dlrs_cue_ablation": "full",
+    "--disable_dlrs_view_consistency": true,
+    "--disable_fslr_reliability_gate": true,
+    "--fslr_grad_clip_norm": 15.0,
+    "--recovery_interval": 10,
+    "--restore_strength": 0.7,
+    "--restore_budget_mode": "drift_tiered",
+    "--sparse_ratio": 0.01,
+    "--fslr_continuous_risk": true,
+    "--fslr_hierarchical_budget": true,
+    "--fslr_layer_quota_cap": 0.35,
+    "--fslr_risk_rho_min": 0.0,
+    "--fslr_risk_rho_max": 0.1,
+    "--fslr_risk_gamma_ess": 0.5,
+    "--fslr_risk_gamma_anchor": 0.5,
+    "--fslr_risk_gamma_drift": 0.0,
+    "--fslr_risk_tau_drift": 0.35,
+    "--fslr_selection_criterion": "drift_only"
+  },
+  "implicit_values_to_verify": {
+    "optimizer": "sgd",
+    "momentum": 0.9,
+    "weight_decay": 0.0,
+    "dlrs_normalize_by_weight": false,
+    "dlrs_dual_perturbation": false,
+    "dlrs_early_exit": false,
+    "dlrs_fast_perturbation": false,
+    "fslr_momentum_discounting": false,
+    "fslr_online_fisher_beta": 0.0,
+    "fslr_event_trigger": true
+  },
+  "protocol": {
+    "severity": 5,
+    "cycles": 3,
+    "prediction": "pre_update",
+    "continual_blocks": 45,
+    "samples_per_block": 10000,
+    "clean_samples": 10000,
+    "revisit_domains": [
+      "gaussian_noise",
+      "shot_noise",
+      "impulse_noise",
+      "defocus_blur"
+    ],
+    "replication_unit": "stored_checkpoint",
+    "n": 3,
+    "training_seed_provenance": "unknown",
+    "independent_training_seed_claim_allowed": false,
+    "optimizer_reset_between_arms": true,
+    "within_domain_order": "inherit verified CIFAR evaluator; save identity, do not borrow Tiny permutation"
+  },
+  "notes": [
+    "CLI true emits a flag; false omits it; null is unresolved and must block command preparation.",
+    "fslr_event_trigger=true preserves CIFAR reference. DSR isolation arms explicitly disable it in BOTH adaptive and constant arms.",
+    "Not a drop-in config for scripts/revision_20261018/matrix.py; use prepare_commands.py."
+  ]
+}

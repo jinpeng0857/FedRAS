@@ -14,6 +14,7 @@ import logging
 import math
 import os
 from pathlib import Path
+import sys
 import time
 from typing import Dict, Tuple
 
@@ -686,7 +687,16 @@ def parse_args():
         default=-1,
     )
     parser.add_argument("--output_path", required=True)
-    return parser.parse_args()
+    args = parser.parse_args()
+    # Preserve explicit CLI overrides when the public FedDR entrypoint fills
+    # in primary defaults. This is needed for controlled ablations that set
+    # a primary-config field to a deliberate non-default value.
+    args._explicit_cli_options = {
+        token.split("=", 1)[0]
+        for token in sys.argv[1:]
+        if token.startswith("--")
+    }
+    return args
 
 
 def apply_official_baseline_config(args):
@@ -724,11 +734,14 @@ def apply_feddr_primary_config(args, public_tta_method):
         args.feddr_bn_scope = FEDDR_PRIMARY_BN_SCOPE
 
     args.dlrs_normalize_by_weight = FEDDR_PRIMARY_NORMALIZE_BY_WEIGHT
-    args.dlrs_weight_mode = FEDDR_PRIMARY_WEIGHT_MODE
+    explicit_options = getattr(args, "_explicit_cli_options", set())
+    if "--dlrs_weight_mode" not in explicit_options:
+        args.dlrs_weight_mode = FEDDR_PRIMARY_WEIGHT_MODE
     args.disable_fslr_reliability_gate = (
         FEDDR_PRIMARY_DISABLE_FSLR_RELIABILITY_GATE
     )
-    args.dlrs_hybrid_threshold = FEDDR_PRIMARY_HYBRID_THRESHOLD
+    if "--dlrs_hybrid_threshold" not in explicit_options:
+        args.dlrs_hybrid_threshold = FEDDR_PRIMARY_HYBRID_THRESHOLD
     if getattr(args, "fslr_grad_clip_norm", None) is None:
         args.fslr_grad_clip_norm = 15.0
     args.dlrs_anchor_rectify_beta = FEDDR_PRIMARY_ANCHOR_RECTIFY_BETA

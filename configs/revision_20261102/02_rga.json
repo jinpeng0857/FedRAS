@@ -1,0 +1,89 @@
+{
+  "question": "区分全局阻尼与按样本重分配，再对照替代信号。",
+  "reference_arm": "fedras_default",
+  "arms": [
+    {
+      "id": "rga_uniform_scaled",
+      "status": "configured",
+      "activation": "primary",
+      "checkpoints": [
+        "run1",
+        "run2",
+        "run3"
+      ],
+      "fedras": true,
+      "cli": {
+        "--dlrs_ablation_variant": "uniform_recap",
+        "--adapt_lr": 0.0008995
+      },
+      "matching": {
+        "beta": 0.3,
+        "assumed_disagreement_fraction": 0.335,
+        "expected_mean_weight": 0.8995,
+        "formula": "0.001 * (1 - 0.3 * 0.335)",
+        "kind": "approximate prespecified scale match, not trajectory/gradient-norm equality",
+        "verify": [
+          "actual mean weights by checkpoint",
+          "gradient_clipped batch counts",
+          "controller/ranking unchanged; free-running DSR dose can differ"
+        ]
+      }
+    },
+    {
+      "id": "rga_entropy_only",
+      "status": "blocked_implementation",
+      "activation": "pilot_run1_then_expand_without_changing_definition",
+      "checkpoints": [
+        "run1",
+        "run2",
+        "run3"
+      ],
+      "fedras": true,
+      "cli": {},
+      "blockers": [
+        "No entropy_only CLI branch exists. Implement binary entropy weighting with same regional loss/scale and same disagreement DSR sensor. Runtime guard currently accepts only anchor_only/uniform_recap; extend deliberately."
+      ],
+      "implementation_spec": {
+        "signal": "normalized entropy = H(softmax(logits)) / log(C), detached pre-update",
+        "selection": "top-k by normalized entropy within each batch; stable sample-index tie break",
+        "k": "floor(0.335 * B + 0.5), including partial batches",
+        "weight": "1 - 0.3 * indicator(top-k)",
+        "normalization": "batch mean, no weight-sum normalization",
+        "controller": "disagreement as reference; do not feed entropy mask to DSR",
+        "pilot_checkpoints": [
+          "run1"
+        ],
+        "expansion": "run2 and run3 if pilot is directionally clear; pilot alone never satisfies 3/3 rule",
+        "label_use": "none"
+      }
+    }
+  ],
+  "rules": {
+    "unit": "percentage_point",
+    "default_minus_uniform": {
+      "damping_interpretation": {
+        "abs_mean_delta_lt": 0.1,
+        "directions_not_all_same": true
+      },
+      "reallocation_support": {
+        "mean_delta_gte": 0.2,
+        "positive_pairs": 3
+      },
+      "otherwise": "inconclusive; descriptive differences only"
+    },
+    "entropy_comparison": {
+      "abs_mean_delta_lt": 0.1,
+      "interpretation": "descriptively similar; does not establish formal equivalence or anchor specificity"
+    },
+    "report": [
+      "Z/N",
+      "epsilon",
+      "epsilon_RGA",
+      "epsilon_RGA/epsilon",
+      "actual mean_weight",
+      "dose",
+      "gradient clipping"
+    ],
+    "caveat": "A free-running controller can change recovery trajectory when the loss changes; this is a system-level weighting comparison, not a matched-dose causal isolation."
+  }
+}
