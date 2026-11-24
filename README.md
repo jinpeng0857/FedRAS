@@ -1,0 +1,41 @@
+# FedRAS
+
+FedRAS studies continual test-time adaptation of federated models using reliability-guided adaptation and sparse restoration. This repository contains the evaluation code, source-statistics preparation, and experiment launchers for the [FedRAS method](paper/fedras_method.tex).
+
+## Main evaluation
+
+`main_test.py` runs the matched CIFAR-C evaluation. Its default method is registered in the code as `feddr`, which combines DLRS and FSLR. Use the corresponding trained checkpoint, source statistics, and dataset paths for your run.
+
+```bash
+python main_test.py --help
+python prepare_main_statistics.py --help
+```
+
+The statistics script prepares source statistics from a trained checkpoint and source data. See [the evaluation entry point](main_test.py) for method options and [the training scripts](train/) for checkpoint generation.
+
+## Paper experiments
+
+Preview the supplementary experiment commands from the repository root.
+
+```bash
+bash run_fedras_experiments.sh --help
+bash run_fedras_experiments.sh components --dry-run
+```
+
+The launcher supports component ablations, Appendix F, random and fixed restoration controls, cost, and sensitivity experiments. It invokes `scripts/revision_20261018/run_case.py` from a separate runtime checkout. Set `REVISION_ROOT` if that checkout is outside the default sibling directory `../FEDEATA-revision-20261018`.
+
+A full run requires CIFAR-100, CIFAR-100-C, and readable checkpoints with matching source-statistics files for the selected group. The launcher exposes path overrides through `--help` and writes one `result.json` per trial under `OUTPUT_ROOT`, which defaults to `output/fedras_pdf_supplement`. Dry runs print commands without launching evaluation or checking input files.
+
+- [Paper ablation launcher](scripts/run_paper_ablations.sh)
+- [Revised experiment configurations and command generation](configs/revision_20261102/README.md)
+- [Additional supplementary experiments](supplement_experiments/README.md)
+
+## Tests
+
+Run the DLRS and sparse-restoration unit tests from the repository root.
+
+```bash
+python -m unittest tests.test_dlrs tests.test_sparse_restore
+```
+
+Additional regression tests are in [tests/](tests/).
