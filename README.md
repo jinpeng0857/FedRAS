@@ -22,7 +22,9 @@ bash run_fedras_experiments.sh --help
 bash run_fedras_experiments.sh components --dry-run
 ```
 
-The launcher supports component ablations, Appendix F, random and fixed restoration controls, cost, and sensitivity experiments. It invokes `scripts/revision_20261018/run_case.py` from a separate runtime checkout. Set `REVISION_ROOT` if that checkout is outside the default sibling directory `../FEDEATA-revision-20261018`.
+The launcher supports component ablations, Appendix F, random and fixed restoration controls, cost, and sensitivity experiments. It runs the bundled `scripts/revision_20261018/run_case.py`. Set `REVISION_ROOT` to use a compatible runtime from another checkout.
+
+Appendix F and component runs write per-trial diagnostics. Restarting a run skips completed trials with the same arguments and archives unfinished trials with their logs. Cost experiments require CUDA and perform an in-process warm-up before each of the three measurements.
 
 A full run requires CIFAR-100, CIFAR-100-C, and readable checkpoints with matching source-statistics files for the selected group. The launcher exposes path overrides through `--help` and writes one `result.json` per trial under `OUTPUT_ROOT`, which defaults to `output/fedras_pdf_supplement`. Dry runs print commands without launching evaluation or checking input files.
 

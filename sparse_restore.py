@@ -492,7 +492,14 @@ class PeriodicSparseRestorer:
             f_rms_l = f_l.square().mean().sqrt()
             d_rms_l = d_l.square().mean().sqrt()
 
-            if f_rms_l <= 1e-12 or d_rms_l <= 1e-12:
+            if self.selection_criterion == "drift_only":
+                if d_rms_l <= 1e-12:
+                    s_l = torch.zeros_like(d_l)
+                    m_l = 0.0
+                else:
+                    s_l = d_l / (d_rms_l + 1e-8)
+                    m_l = float(s_l.sum().item())
+            elif f_rms_l <= 1e-12 or d_rms_l <= 1e-12:
                 s_l = torch.zeros_like(f_l)
                 m_l = 0.0
             else:
@@ -529,24 +536,50 @@ class PeriodicSparseRestorer:
             for _, i in fractional_parts[:remainder]:
                 quotas_int[i] += 1
 
-        # 3. Pick top-K_l elements within each layer
+        # 3. Preserve Fisher-drift layer quotas while changing only within-layer ranking.
         selected_global_indices = []
         total_positive = 0
+        random_generator = None
+        if self.selection_criterion == "random" and self.selection_seed is not None:
+            random_generator = torch.Generator()
+            random_generator.manual_seed(
+                int(self.selection_seed + self.num_batches * 1000)
+            )
 
-        for (name, param), size, offset, s_l, k_l in zip(
-            self.params.items(), self._parameter_sizes, self._global_offsets, layer_scores, quotas_int
+        for (_name, _param), size, offset, s_l, k_l in zip(
+            self.params.items(), self._parameter_sizes, self._global_offsets,
+            layer_scores, quotas_int
         ):
-            pos = torch.isfinite(s_l) & (s_l > 0)
-            total_positive += int(pos.sum().item())
+            eligible = torch.isfinite(s_l) & (s_l > 0)
+            total_positive += int(eligible.sum().item())
             if k_l <= 0:
                 continue
-            eligible_local = pos.nonzero(as_tuple=False).flatten()
+            eligible_local = eligible.nonzero(as_tuple=False).flatten()
             if eligible_local.numel() == 0:
                 continue
             actual_pick = min(k_l, int(eligible_local.numel()))
-            scores_eligible = s_l.index_select(0, eligible_local)
-            ranking = torch.argsort(scores_eligible, descending=True)
-            chosen_local = eligible_local.index_select(0, ranking[:actual_pick])
+
+            if self.selection_criterion == "random":
+                if random_generator is None:
+                    ranking = torch.randperm(
+                        int(eligible_local.numel()), device=eligible_local.device
+                    )[:actual_pick]
+                else:
+                    ranking = torch.randperm(
+                        int(eligible_local.numel()), generator=random_generator
+                    )[:actual_pick].to(eligible_local.device)
+            else:
+                if self.selection_criterion == "drift_only":
+                    layer_selection_scores = absolute_drift[offset : offset + size]
+                elif self.selection_criterion == "fisher_only":
+                    layer_selection_scores = effective_fishers[offset : offset + size]
+                else:
+                    # fisher_drift ranks by the same scores used for layer masses.
+                    layer_selection_scores = s_l
+                scores_eligible = layer_selection_scores.index_select(0, eligible_local)
+                ranking = torch.argsort(scores_eligible, descending=True)[:actual_pick]
+
+            chosen_local = eligible_local.index_select(0, ranking)
             selected_global_indices.append(chosen_local + offset)
 
         self.last_positive_score_elements = total_positive

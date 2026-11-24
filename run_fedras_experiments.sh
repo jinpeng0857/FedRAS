@@ -9,7 +9,7 @@ Usage: bash run_fedras_experiments.sh {components|appendix-f|random|fixed|cost|s
   appendix-f    Table 13 only, run1
   random        Table 8, displacement-reference recording and matched random replay
   fixed         Table 8, fixed rho 0.02/0.05/0.10, three checkpoints
-  cost          Table 9, run1, one warm-up and three measured runs
+  cost          Table 9, run1, three measured runs with in-process warm-up
   sensitivity   Table 11, six non-default points on run1
   all           All formal groups, sharing the component trajectories for Table 13
 Overrides: REVISION_ROOT, ASSET_ROOT, OUTPUT_ROOT, PYTHON_BIN, DEVICE, DATA_ROOT,
@@ -32,7 +32,7 @@ fi
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd -- "$root"
-revision_root=${REVISION_ROOT:-"$root/../FEDEATA-revision-20261018"}
+revision_root=${REVISION_ROOT:-"$root"}
 asset_root=${ASSET_ROOT:-"$root"}
 output_root=${OUTPUT_ROOT:-"$root/output/fedras_pdf_supplement"}
 python_bin=${PYTHON_BIN:-python}
@@ -51,6 +51,13 @@ statistics=("" "${COV_PATH1:-"$asset_root/test/outputs/fedacg_run1_statistics.pt
 indices=(1)
 case "$stage" in components|random|fixed|all) indices=(1 2 3) ;; esac
 
+if [[ "$stage" == cost || "$stage" == all ]]; then
+  if [[ "$device" != cuda && ! "$device" =~ ^cuda:[0-9]+$ ]]; then
+    printf 'Table 9 requires a CUDA device. DEVICE=%s\n' "$device" >&2
+    exit 2
+  fi
+fi
+
 if ! "$dry_run"; then
   inputs=("$runner" "$data_root/labels.npy")
   for split in train test meta; do inputs+=("$clean_root/cifar-100-python/$split"); done
@@ -65,6 +72,17 @@ if ! "$dry_run"; then
   if (( ${#missing[@]} )); then
     printf 'Missing or unreadable input: %s\n' "${missing[@]}" >&2
     exit 2
+  fi
+  if [[ "$stage" == cost || "$stage" == all ]]; then
+    "$python_bin" -c '
+import sys
+import torch
+
+device = torch.device(sys.argv[1])
+index = device.index if device.index is not None else 0
+if not torch.cuda.is_available() or index >= torch.cuda.device_count():
+    sys.exit(f"Table 9 requires an available CUDA device. DEVICE={device}")
+' "$device"
   fi
 fi
 
@@ -86,7 +104,7 @@ adaptive=(
   --recovery_interval 10 --restore_strength 0.7 --fslr_event_trigger
 )
 
-run_trial() {
+run_trial() (
   local index=$1 name=$2
   shift 2
   local trial_dir="$output_root/$name"
@@ -98,19 +116,37 @@ run_trial() {
     printf '\n'
     return
   fi
+  local lock="$trial_dir.lock" archive invocation
+  printf -v invocation '%q ' "${command[@]}"
   mkdir -p -- "$(dirname -- "$trial_dir")"
+  if ! mkdir -- "$lock"; then
+    printf 'Cannot acquire trial lock: %s\n' "$lock" >&2
+    return 1
+  fi
+  trap 'rmdir -- "$lock"' EXIT
+  if [[ -d "$trial_dir" ]]; then
+    if [[ -f "$trial_dir/complete" && -s "$trial_dir/result.json" ]]; then
+      if [[ "$(cat -- "$trial_dir/complete")" != "$invocation" ]]; then
+        printf 'Trial already completed with different arguments: %s. Use another OUTPUT_ROOT.\n' "$trial_dir" >&2
+        return 1
+      fi
+      printf 'Skipping completed trial: %s\n' "$name"
+      return
+    fi
+    archive=$(mktemp -d "$trial_dir.previous.XXXXXX")
+    mv -- "$trial_dir" "$archive/trial"
+    printf 'Preserved previous trial: %s/trial\n' "$archive"
+  fi
   mkdir -- "$trial_dir"
   "${command[@]}" 2>&1 | tee "$trial_dir/run.log"
-}
+  printf '%s\n' "$invocation" > "$trial_dir/complete"
+)
 
 run_components() {
   local index=$1 group=$2
   local dsr="$group/run$index/dsr_only" full="$group/run$index/fedras"
-  local dsr_diagnostics=() full_diagnostics=()
-  if [[ "$group" == components ]]; then
-    dsr_diagnostics=(--review_diagnostics_path "$output_root/$dsr/diagnostics.jsonl" --review_run_id "$dsr" --review_beta_a 0)
-    full_diagnostics=(--review_diagnostics_path "$output_root/$full/diagnostics.jsonl" --review_run_id "$full" --review_beta_a 0.3)
-  fi
+  local dsr_diagnostics=(--review_diagnostics_path "$output_root/$dsr/diagnostics.jsonl" --review_run_id "$dsr" --review_beta_a 0)
+  local full_diagnostics=(--review_diagnostics_path "$output_root/$full/diagnostics.jsonl" --review_run_id "$full" --review_beta_a 0.3)
   run_trial "$index" "$dsr" "${adaptive[@]}" --dlrs_ablation_variant uniform_recap \
     --anchor_disagreement_diagnostic "${dsr_diagnostics[@]}"
   run_trial "$index" "$full" "${adaptive[@]}" --dlrs_ablation_variant anchor_only "${full_diagnostics[@]}"
@@ -144,12 +180,8 @@ if [[ "$stage" == fixed || "$stage" == all ]]; then
 fi
 
 if [[ "$stage" == cost || "$stage" == all ]]; then
-  if [[ "$device" != cuda && "$device" != cuda:* ]]; then
-    printf 'Table 9 requires a CUDA device. DEVICE=%s\n' "$device" >&2
-    exit 2
-  fi
-  for repeat in warmup repeat1 repeat2 repeat3; do
-    run_trial 1 "cost/$repeat" "${adaptive[@]}" --dlrs_ablation_variant anchor_only
+  for repeat in repeat1 repeat2 repeat3; do
+    run_trial 1 "cost/$repeat" "${adaptive[@]}" --dlrs_ablation_variant anchor_only --revision-warmup
   done
 fi
 

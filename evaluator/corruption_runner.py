@@ -1,6 +1,8 @@
 """Single corruption, clean, and post-stream evaluation routines."""
 
+import json
 import math
+from copy import deepcopy
 from pathlib import Path
 import time
 from typing import Any, Dict, List, Tuple
@@ -18,6 +20,11 @@ from evaluator.dataset import (
     make_corruption_loader,
 )
 from metrics.collector import _counter_delta, _mapping_delta, _synchronize
+from metrics.review_diagnostics import (
+    anchor_rectification_weights,
+    summarize_review_batch,
+    write_review_batch_jsonl,
+)
 
 
 def evaluate_corruption(
@@ -29,6 +36,16 @@ def evaluate_corruption(
     flush_adapter: bool = False,
 ):
     dataset, loader = make_corruption_loader(args, corruption)
+    review_path = getattr(args, "review_diagnostics_path", None)
+    write_review_diagnostics = bool(review_path and cycle is not None)
+    review_anchor_model = None
+    if write_review_diagnostics:
+        review_anchor_model = getattr(adapter, "anchor_model", None)
+        if review_anchor_model is None:
+            review_anchor_model = deepcopy(adapter.model)
+            review_anchor_model.eval()
+            review_anchor_model.requires_grad_(False)
+        adapter.review_anchor_model = review_anchor_model
     before = dict(adapter.counters)
     restore_before = dict(adapter.restorer.stats)
     correct = 0
@@ -69,6 +86,7 @@ def evaluate_corruption(
     diagnostic_counts = {key: 0 for key in diagnostic_sums}
     asr_reset_events = 0
     last_anchor_drift = None
+    sample_offset = 0
     try:
         for batch_index, (images, labels) in enumerate(loader):
             if args.max_batches > 0 and batch_index >= args.max_batches:
@@ -80,6 +98,79 @@ def evaluate_corruption(
             logits, batch_stats = adapter.adapt(images)
             _synchronize(device)
             adaptation_seconds += time.perf_counter() - start
+            if write_review_diagnostics:
+                current_predictions = logits.detach().argmax(dim=1).cpu().tolist()
+                with torch.no_grad():
+                    anchor_predictions = (
+                        review_anchor_model(images).argmax(dim=1).cpu().tolist()
+                    )
+                beta_a = float(getattr(args, "review_beta_a", 0.3))
+                weights = anchor_rectification_weights(
+                    current_predictions, anchor_predictions, beta=beta_a
+                )
+                record = summarize_review_batch(
+                    sample_ids=list(range(sample_offset, sample_offset + len(current_predictions))),
+                    current_predictions=current_predictions,
+                    anchor_predictions=anchor_predictions,
+                    labels=labels.detach().cpu().tolist(),
+                    weights=weights,
+                )
+                scalar_stats = {
+                    key: value
+                    for key, value in batch_stats.items()
+                    if not torch.is_tensor(value)
+                    and (
+                        value is None
+                        or isinstance(value, (str, bool, int))
+                        or (isinstance(value, float) and math.isfinite(value))
+                    )
+                }
+                restorer = adapter.restorer
+                restoration = {}
+                for key, value in vars(restorer).items():
+                    if not key.startswith("last_"):
+                        continue
+                    if isinstance(value, dict):
+                        scalar_value = {
+                            name: item
+                            for name, item in value.items()
+                            if item is None
+                            or isinstance(item, (str, bool, int))
+                            or (isinstance(item, float) and math.isfinite(item))
+                        }
+                        if len(scalar_value) == len(value):
+                            restoration[key] = scalar_value
+                    elif (
+                        value is None
+                        or isinstance(value, (str, bool, int))
+                        or (isinstance(value, float) and math.isfinite(value))
+                    ):
+                        restoration[key] = value
+                record["adaptation"] = scalar_stats
+                record["dsr"] = restoration
+                for key, output_key in (
+                    ("rga_joint_weight_vector", "actual_rga_joint_weight_vector"),
+                    ("rga_applied_weight_vector", "applied_rga_weight_vector"),
+                ):
+                    vector = batch_stats.get(key)
+                    if torch.is_tensor(vector):
+                        record[output_key] = vector.detach().cpu().tolist()
+                write_review_batch_jsonl(
+                    review_path,
+                    {
+                        "run_id": getattr(args, "review_run_id", None),
+                        "model_path": args.model_path,
+                        "seed": args.seed,
+                        "corruption": corruption,
+                        "severity": SEVERITY,
+                        "cycle": cycle,
+                        "batch_index": batch_index,
+                        "sample_id_start": sample_offset,
+                        "beta_a": beta_a,
+                    },
+                    record,
+                )
+                sample_offset += len(current_predictions)
             selected_counts.append(batch_stats["selected"])
             for key in diagnostic_sums:
                 value = batch_stats.get(key)

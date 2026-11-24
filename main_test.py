@@ -687,6 +687,10 @@ def parse_args():
         default=-1,
     )
     parser.add_argument("--output_path", required=True)
+    parser.add_argument("--review_diagnostics_path", default=None)
+    parser.add_argument("--review_run_id", default=None)
+    parser.add_argument("--review_beta_a", type=float, default=0.3)
+    parser.add_argument("--review_continual_only", action="store_true")
     args = parser.parse_args()
     # Preserve explicit CLI overrides when the public FedDR entrypoint fills
     # in primary defaults. This is needed for controlled ablations that set
@@ -776,8 +780,34 @@ def apply_cola_primary_config(args):
     return args
 
 
+def run_review_evaluations(args, device, feature_variance, fishers, statistics_meta):
+    """Run the review-requested stages and optionally omit domain-wise work."""
+    if getattr(args, "review_continual_only", False):
+        continual, metadata = run_continual(
+            args, device, feature_variance, fishers, statistics_meta
+        )
+        return None, continual, metadata
+    domain_wise, domain_metadata = run_domain_wise(
+        args, device, feature_variance, fishers, statistics_meta
+    )
+    continual, continual_metadata = run_continual(
+        args, device, feature_variance, fishers, statistics_meta
+    )
+    if domain_metadata != continual_metadata:
+        raise RuntimeError("Domain-wise and Continual method builds are inconsistent")
+    return domain_wise, continual, domain_metadata
+
 def run():
     args = parse_args()
+    if args.review_diagnostics_path:
+        if not args.review_run_id:
+            raise ValueError("--review_run_id is required with review diagnostics")
+        if not math.isfinite(args.review_beta_a) or not 0.0 <= args.review_beta_a < 1.0:
+            raise ValueError("--review_beta_a must be finite and in [0, 1)")
+        review_path = Path(args.review_diagnostics_path)
+        if review_path.exists():
+            raise FileExistsError(f"refusing to append to existing diagnostics: {review_path}")
+        review_path.parent.mkdir(parents=True, exist_ok=True)
     args._adapt_lr_explicit = args.adapt_lr is not None
     args.public_tta_method = args.tta_method
     args.tta_method = resolve_tta_method(args.public_tta_method)
@@ -855,15 +885,9 @@ def run():
     LOGGER.info("sample filter: %s", args.sample_filter)
     LOGGER.info("prediction protocol: pre_update")
 
-    domain_wise, domain_metadata = run_domain_wise(
+    domain_wise, continual, metadata = run_review_evaluations(
         args, device, feature_variance, fishers, statistics_meta
     )
-    continual, continual_metadata = run_continual(
-        args, device, feature_variance, fishers, statistics_meta
-    )
-    if domain_metadata != continual_metadata:
-        raise RuntimeError("Domain-wise and Continual method builds are inconsistent")
-    metadata = domain_metadata
     final_clean = continual["post_stream"]["clean"]
     clean_forgetting = initial_clean["accuracy"] - final_clean["accuracy"]
     is_region_method = (
@@ -900,7 +924,8 @@ def run():
         "protocol": {
             "severity": SEVERITY,
             "corruptions": CORRUPTIONS,
-            "domain_wise_and_continual_reported_separately": True,
+            "domain_wise_and_continual_reported_separately": not args.review_continual_only,
+            "domain_wise_executed": not args.review_continual_only,
             "continual_cycles": CONTINUAL_CYCLES,
             "prediction": "pre_update",
             "seed": args.seed,

@@ -694,6 +694,7 @@ def run_continual(args, device, feature_variance, fishers, statistics_meta):
         statistics_meta,
     )
     if device.type == "cuda":
+        torch.cuda.synchronize(device)
         torch.cuda.reset_peak_memory_stats(device)
     start = time.perf_counter()
     results = []
@@ -746,7 +747,10 @@ def run_continual(args, device, feature_variance, fishers, statistics_meta):
     cola_diagnostics = (
         adapter.diagnostics() if hasattr(adapter, "diagnostics") else None
     )
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
     wall_seconds = time.perf_counter() - start
+    resource = resource_summary(results, wall_seconds, device)
     post_stream = evaluate_post_stream(args, adapter, results, device)
     overall_summary = summarize_corruptions(results)
     overall_summary.pop("second_half_definition", None)
@@ -766,7 +770,7 @@ def run_continual(args, device, feature_variance, fishers, statistics_meta):
         "state_continuity": True,
         "cycles": CONTINUAL_CYCLES,
         "summary": overall_summary,
-        "resource": resource_summary(results, wall_seconds, device),
+        "resource": resource,
         "restoration": restoration_stats_for_output(args, adapter.restorer),
         "cola": cola_diagnostics,
         "per_corruption": results,
