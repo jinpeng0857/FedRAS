@@ -1,0 +1,598 @@
+{
+  "schema_version": 1,
+  "design_id": "fedras_supplement_20261112",
+  "design_date": "2026-11-12",
+  "status": "design_complete_execution_blocked",
+  "source_attachment": "C:/Users/33502/.codex/attachments/5cd231db-0afd-48a3-a5bf-6eb478416c7e/已粘贴的文本.txt",
+  "execution_launched": false,
+  "roots": {
+    "code_root": "D:/dp1/FEDEATA-revision-20261018",
+    "runner": "scripts/revision_20261018/run_case.py",
+    "asset_root": "D:/dp1/FEDEATA",
+    "output_root": "output/fedras_supplement_20261112"
+  },
+  "runner_contract": {
+    "model_and_statistics_arguments": {
+      "--model_path": "checkpoint-specific assets.checkpoints[].model_path",
+      "--statistics_path": "checkpoint-specific assets.checkpoints[].statistics_path"
+    },
+    "common_arguments": {
+      "--dataset": "cifar100",
+      "--federated_method": "fedacg",
+      "--anchor_key": "lookahead_anchor",
+      "--cifar_c_path": "D:/dp1/FEDEATA/data/CIFAR-100-C",
+      "--clean_data_root": "D:/dp1/FEDEATA/data",
+      "--batch_size": 128,
+      "--adapt_lr": 0.001,
+      "--feddr_bn_scope": "excluding_layer4",
+      "--num_workers": 2,
+      "--seed": 0,
+      "--max_batches": -1,
+      "--review_continual_only": true,
+      "--device": "select after runtime hardware preflight",
+      "--output_path": "D:/dp1/FEDEATA/output/fedras_supplement_20261112/{checkpoint}/{arm}/result.json"
+    },
+    "explicit_current_public_rga_flags_for_non_feddr_entrypoints": [
+      "--dlrs_region_scale_min 0.6",
+      "--dlrs_region_scale_max 1.2",
+      "--dlrs_reliability_alpha 0.7",
+      "--dlrs_sample_reliability_mode full",
+      "--dlrs_normalize_by_weight",
+      "--dlrs_weight_mode product",
+      "--dlrs_hybrid_threshold 0.2",
+      "--dlrs_skip_update_tau_s 0.05",
+      "--dlrs_skip_update_tau_ess 0.05",
+      "--dlrs_c_max 2.0",
+      "--dlrs_consistency_weight 0.5",
+      "--dlrs_anchor_rectify_beta 0.3",
+      "--dlrs_view_consistency",
+      "--dlrs_view_alpha 0.8",
+      "--dlrs_view_js_scale 1.0",
+      "--dlrs_ablation_variant full",
+      "--dlrs_cue_ablation full"
+    ],
+    "explicit_current_public_dsr_flags_for_non_feddr_fslr_entrypoints": [
+      "--recovery_interval 10",
+      "--restore_strength 0.7",
+      "--restore_budget_mode drift_tiered",
+      "--restore_drift_thresholds 0.10 0.20 0.35",
+      "--restore_drift_ratios 0.0 0.02 0.05 0.10",
+      "--disable_fslr_reliability_gate",
+      "--fslr_event_trigger",
+      "--fslr_event_k 3",
+      "--fslr_event_tau_r 0.40",
+      "--fslr_event_tau_a 0.50",
+      "--fslr_event_tau_h 1.50",
+      "--fslr_event_tau_d 0.20",
+      "--fslr_event_lambda_0 0.50",
+      "--fslr_event_lambda_max 0.90",
+      "--fslr_event_k_rho 2.0",
+      "--fslr_event_rho_max 0.20",
+      "--fslr_event_cooldown 20",
+      "--fslr_continuous_risk",
+      "--fslr_risk_rho_min 0.0",
+      "--fslr_risk_rho_max 0.10",
+      "--fslr_risk_gamma_ess 0.50",
+      "--fslr_risk_gamma_anchor 0.50",
+      "--fslr_risk_gamma_drift 0.0",
+      "--fslr_risk_tau_drift 0.35",
+      "--fslr_hierarchical_budget",
+      "--fslr_layer_quota_cap 0.35",
+      "--fslr_grad_clip_norm 15.0",
+      "--fslr_selection_criterion fisher_drift",
+      "--fslr_online_fisher_beta 0.0"
+    ],
+    "method_argument_by_arm": {
+      "E1-A": "base",
+      "E1-B": "dlrs plus new entropy_topk hook",
+      "E1-C": "dlrs plus new low_confidence_topk hook",
+      "E1-D": "dlrs plus new random_topk hook",
+      "E1-E": "dlrs with --dlrs_ablation_variant anchor_only --dlrs_anchor_rectify_beta 0.3",
+      "E1-F": "dlrs plus new per-batch uniform matched-scale hook",
+      "E1-G": "dlrs with --dlrs_ablation_variant anchor_only --dlrs_anchor_rectify_beta 0.3 --dlrs_normalize_by_weight",
+      "E2-A": "dlrs",
+      "E2-B": "dlrs_fslr with --revision-schedule-replay PATH --revision-ranking random",
+      "E2-C": "dlrs_fslr with --revision-schedule-replay PATH plus new low_drift ranking",
+      "E2-D": "dlrs_fslr with --revision-schedule-replay PATH --revision-ranking drift_only",
+      "E3-A": "base",
+      "E3-B": "dlrs with all applicable current_public_feddr_settings.rga values",
+      "E3-C": "base_fslr with current DSR values plus new anchor-disagreement input",
+      "E3-D": "feddr"
+    },
+    "source_replay_argument": {
+      "E3-D": "--revision-schedule-record D:/dp1/FEDEATA/output/fedras_supplement_20261112/{checkpoint}/dsr_reference.schedule.pt",
+      "E2-B/C/D": "--revision-schedule-replay D:/dp1/FEDEATA/output/fedras_supplement_20261112/{checkpoint}/dsr_reference.schedule.pt"
+    }
+  },
+  "assets": {
+    "dataset": {
+      "dataset": "cifar100",
+      "clean_root": "data",
+      "clean_dataset_path": "data/cifar100/cifar-100-python",
+      "corruption_root": "data/CIFAR-100-C",
+      "paths_present": true,
+      "full_integrity_validation": false
+    },
+    "target_checkpoint_count": 3,
+    "available_checkpoint_count": 1,
+    "replication_unit": "stored_checkpoint",
+    "training_seed_provenance": "unknown",
+    "checkpoints": [
+      {
+        "id": "run1",
+        "model_path": "train/results/cifar100_100clients_alpha0.3_equal/fedacg_resnet18/cifar100_resnet18_run1/model_round499.pt",
+        "model_status": "present_safe_loadable",
+        "model_size_bytes": 179833275,
+        "model_sha256": "D529879BA60301E6CC2BB72E89FF98D809E4075534F08A444193B2F0F8578EB9",
+        "checkpoint_meta": {
+          "dataset": "cifar100",
+          "backbone": "resnet18",
+          "num_class": 100,
+          "federated_method": "fedacg",
+          "alpha": 0.3,
+          "round": 499,
+          "best_clean_acc": 0.7697,
+          "required_anchor_key": "lookahead_anchor",
+          "required_anchor_present": true
+        },
+        "statistics_path": "test/outputs/fedacg_run1_statistics.pt",
+        "statistics_status": "present",
+        "eata_statistics_path": "test/outputs/fedacg_run1_eata_statistics.pt",
+        "eata_statistics_status": "present"
+      },
+      {
+        "id": "run2",
+        "model_path": "train/results/cifar100_100clients_alpha0.3_equal/fedacg_resnet18/run2/model_round499.pt",
+        "model_status": "missing",
+        "statistics_path": "test/outputs/fedacg_run2_statistics.pt",
+        "statistics_status": "present",
+        "eata_statistics_path": "test/outputs/fedacg_run2_eata_statistics.pt",
+        "eata_statistics_status": "present"
+      },
+      {
+        "id": "run3",
+        "model_path": "train/results/cifar100_100clients_alpha0.3_equal/fedacg_resnet18/run3/model_round499.pt",
+        "model_status": "missing",
+        "statistics_path": "test/outputs/fedacg_run3_statistics.pt",
+        "statistics_status": "present",
+        "eata_statistics_path": "test/outputs/fedacg_run3_eata_statistics.pt",
+        "eata_statistics_status": "present"
+      }
+    ]
+  },
+  "protocol": {
+    "dataset": "cifar100",
+    "corruption_dataset": "CIFAR-100-C",
+    "severity": 5,
+    "corruptions": [
+      "gaussian_noise",
+      "shot_noise",
+      "impulse_noise",
+      "defocus_blur",
+      "glass_blur",
+      "motion_blur",
+      "zoom_blur",
+      "snow",
+      "frost",
+      "fog",
+      "brightness",
+      "contrast",
+      "elastic_transform",
+      "pixelate",
+      "jpeg_compression"
+    ],
+    "cycles": 3,
+    "blocks_per_cycle": 15,
+    "total_blocks": 45,
+    "batch_size": 128,
+    "max_batches": -1,
+    "num_workers": 2,
+    "evaluation_seed": 0,
+    "prediction": "pre_update",
+    "optimizer": {
+      "name": "sgd",
+      "learning_rate": 0.001,
+      "momentum": 0.9,
+      "weight_decay": 0.0
+    },
+    "adaptation_parameter_scope": "batchnorm_affine_excluding_layer4",
+    "regional_loss": "recap_regional_entropy",
+    "anchor_key": "lookahead_anchor",
+    "state_policy": {
+      "within_arm": "persist model and optimizer over all 45 blocks",
+      "between_arms": "fresh model, optimizer, adapter and restorer from same stored checkpoint"
+    },
+    "post_stream_evaluations": {
+      "clean": true,
+      "revisit_corruptions": [
+        "gaussian_noise",
+        "shot_noise",
+        "impulse_noise",
+        "defocus_blur"
+      ],
+      "frozen_state": true
+    },
+    "labels_used_for": [
+      "accuracy metrics",
+      "offline correctness-conditioned diagnostics"
+    ],
+    "labels_used_for_adaptation_or_threshold_selection": false
+  },
+  "current_public_feddr_settings": {
+    "rga": {
+      "sample_reliability_mode": "full",
+      "weight_mode": "product",
+      "normalize_by_weight": true,
+      "hybrid_threshold": 0.2,
+      "region_scale_min": 0.6,
+      "region_scale_max": 1.2,
+      "reliability_alpha": 0.7,
+      "anchor_rectify_beta": 0.3,
+      "view_consistency": true,
+      "view_alpha": 0.8,
+      "view_js_scale": 1.0,
+      "consistency_weight": 0.5,
+      "c_max": 2.0,
+      "skip_update_tau_sample_weight": 0.05,
+      "skip_update_tau_ess": 0.05
+    },
+    "dsr": {
+      "interval": 10,
+      "restore_strength": 0.7,
+      "budget_mode": "continuous_risk",
+      "drift_thresholds": [
+        0.1,
+        0.2,
+        0.35
+      ],
+      "drift_tier_ratios": [
+        0.0,
+        0.02,
+        0.05,
+        0.1
+      ],
+      "risk_rho_min": 0.0,
+      "risk_rho_max": 0.1,
+      "risk_gamma_ess": 0.5,
+      "risk_gamma_anchor": 0.5,
+      "risk_gamma_drift": 0.0,
+      "risk_tau_drift": 0.35,
+      "hierarchical_budget": true,
+      "layer_quota_cap": 0.35,
+      "reliability_gate_disabled": true,
+      "event_trigger": true,
+      "event_k_consecutive_batches": 3,
+      "event_tau_reliability": 0.4,
+      "event_tau_anchor_disagreement": 0.5,
+      "event_tau_entropy_z_drop": 1.5,
+      "event_tau_bn_drift": 0.2,
+      "event_base_restore_strength": 0.5,
+      "event_max_restore_strength": 0.9,
+      "event_budget_multiplier": 2.0,
+      "event_rho_max": 0.2,
+      "event_cooldown_batches": 20,
+      "gradient_clip_norm": 15.0,
+      "momentum_discounting": false,
+      "online_fisher_beta": 0.0,
+      "selection_criterion_in_checked_runtime": "fisher_drift",
+      "selection_criterion_in_supplied_plan": "normalized_displacement",
+      "ranking_definition_status": "blocking_discrepancy"
+    }
+  },
+  "experiments": [
+    {
+      "id": "E1",
+      "name": "reliability_signal_and_update_scale",
+      "dsr": "disabled",
+      "regional_scale": 1.2,
+      "matched_count_schedule": {
+        "reference_arm": "E1-E",
+        "definition": "For each batch, k_t is the count of pre-update argmax disagreements between the current model and frozen anchor in E1-E. E1-B/C/D use exactly k_t samples.",
+        "stable_tie_break": "original sample index",
+        "label_free": true
+      },
+      "weights": {
+        "selected": 0.7,
+        "unselected": 1.0
+      },
+      "arms": [
+        {
+          "id": "E1-A",
+          "name": "uniform",
+          "definition": "all per-sample weights equal 1",
+          "current_entrypoint": "base",
+          "status": "supported_run1_pilot",
+          "reuse_key": "E3-A"
+        },
+        {
+          "id": "E1-B",
+          "name": "entropy_topk",
+          "definition": "rank normalized predictive entropy H(p)/log(100) descending; select k_t",
+          "status": "blocked_needs_binary_topk_hook",
+          "note": "Current entropy reliability is continuous and does not implement matched-count binary weights."
+        },
+        {
+          "id": "E1-C",
+          "name": "low_confidence_topk",
+          "definition": "rank maximum softmax confidence ascending; select k_t",
+          "status": "blocked_needs_confidence_mask_hook"
+        },
+        {
+          "id": "E1-D",
+          "name": "random_topk",
+          "definition": "sample k_t examples without replacement",
+          "random_seed": 20261112,
+          "seed_derivation": "arm_seed + 100000*checkpoint_index + stream_batch_index",
+          "status": "blocked_needs_random_sample_weight_hook"
+        },
+        {
+          "id": "E1-E",
+          "name": "anchor_disagreement_binary",
+          "definition": "weight 0.7 exactly when current and frozen-anchor pre-update argmax differ",
+          "current_entrypoint": "dlrs",
+          "current_flags": {
+            "dlrs_ablation_variant": "anchor_only",
+            "dlrs_anchor_rectify_beta": 0.3,
+            "normalize_by_weight": false
+          },
+          "status": "supported_run1_pilot"
+        },
+        {
+          "id": "E1-F",
+          "name": "uniform_matched_update_scale",
+          "definition": "all per-sample weights equal mean(E1-E weights) for the same batch; multiply scalar adaptation loss before backward",
+          "status": "blocked_needs_per_batch_scale_hook",
+          "interpretation_limit": "matches scalar mean weight, not gradient direction or exact parameter updates"
+        },
+        {
+          "id": "E1-G",
+          "name": "normalized_anchor_disagreement",
+          "definition": "E1-E weights with loss sum(w_i*l_i)/sum(w_i)",
+          "current_entrypoint": "dlrs",
+          "current_flags": {
+            "dlrs_ablation_variant": "anchor_only",
+            "dlrs_anchor_rectify_beta": 0.3,
+            "normalize_by_weight": true,
+            "c_max": 2.0
+          },
+          "status": "supported_run1_pilot",
+          "reuse_key": null
+        }
+      ],
+      "outcomes": [
+        "cycle1_accuracy",
+        "cycle2_accuracy",
+        "cycle3_accuracy",
+        "post_stream_clean_accuracy",
+        "post_stream_revisit_accuracy",
+        "error_weight_fraction",
+        "error_weight_reduction",
+        "anchor_disagreement_rate",
+        "actual_mean_weight",
+        "gradient_norm"
+      ]
+    },
+    {
+      "id": "E2",
+      "name": "matched_budget_sparse_restoration",
+      "reference_arm": "E3-D",
+      "reference_schedule": {
+        "record_from": "public FedDR run for the same checkpoint",
+        "record_event_batches": true,
+        "record_per_tensor_quotas": true,
+        "record_coordinate_count": true,
+        "record_strength": true,
+        "record_eligible_pool": true,
+        "identity_bound": [
+          "checkpoint_sha256",
+          "anchor",
+          "Fisher_statistics",
+          "source_hashes",
+          "stream_identity",
+          "batch_count"
+        ]
+      },
+      "arms": [
+        {
+          "id": "E2-A",
+          "name": "no_restoration",
+          "definition": "same full RGA configuration as E3-B, with DSR disabled",
+          "status": "supported_if_exactly_reused",
+          "reuse_key": "E3-B"
+        },
+        {
+          "id": "E2-B",
+          "name": "random_coordinates",
+          "definition": "replay reference event timing, per-tensor quotas, strength, and eligible pool; random selection within each tensor",
+          "current_revision_ranking": "random",
+          "selection_seed": 20261112,
+          "status": "supported_run1_pilot"
+        },
+        {
+          "id": "E2-C",
+          "name": "low_displacement",
+          "definition": "replay reference plan; within each tensor quota select the smallest strictly positive normalized displacement, stable index ties",
+          "status": "blocked_needs_low_drift_ranking"
+        },
+        {
+          "id": "E2-D",
+          "name": "high_displacement",
+          "definition": "replay reference plan; within each tensor quota select the largest normalized displacement",
+          "current_revision_ranking": "drift_only",
+          "status": "supported_run1_pilot",
+          "note": "This is distinct from the checked public FedDR Fisher×displacement ranking."
+        },
+        {
+          "id": "E2-REF",
+          "name": "public_default_reference",
+          "definition": "public FedDR run that records the fixed schedule",
+          "current_revision_ranking": "fisher_drift",
+          "status": "supported_run1_pilot",
+          "reuse_key": "E3-D"
+        }
+      ],
+      "validity_gate": [
+        "all planned reference events have nonzero selected count",
+        "same event batches, per-tensor quotas, count and strength in every replay",
+        "complete 45-block stream and complete event consumption",
+        "no checkpoint/anchor/Fisher/source/stream identity mismatch"
+      ],
+      "outcomes": [
+        "cycle3_accuracy",
+        "post_stream_clean_accuracy",
+        "post_stream_revisit_accuracy",
+        "final_normalized_parameter_drift",
+        "restored_coordinate_count",
+        "per_tensor_quota",
+        "restoration_strength",
+        "nominal_restoration_dose"
+      ]
+    },
+    {
+      "id": "E3",
+      "name": "final_method_2x2_component_ablation",
+      "arms": [
+        {
+          "id": "E3-A",
+          "name": "base",
+          "public_entrypoint": "base",
+          "rga": false,
+          "dsr": false,
+          "status": "supported_run1_pilot",
+          "reuse_key": "E1-A"
+        },
+        {
+          "id": "E3-B",
+          "name": "rga_only",
+          "public_entrypoint": "dlrs",
+          "rga": "full current public RGA settings",
+          "dsr": false,
+          "status": "supported_run1_pilot",
+          "reuse_key": "E2-A"
+        },
+        {
+          "id": "E3-C",
+          "name": "dsr_only",
+          "public_entrypoint": "base_fslr",
+          "rga": false,
+          "dsr": "public settings with separate anchor-disagreement input",
+          "status": "blocked_needs_anchor_signal_in_base_fslr",
+          "note": "Current base_fslr calls the restorer without anchor_disagreement."
+        },
+        {
+          "id": "E3-D",
+          "name": "full_fedras",
+          "public_entrypoint": "feddr",
+          "rga": true,
+          "dsr": true,
+          "status": "supported_run1_pilot",
+          "current_revision_ranking": "fisher_drift",
+          "reuse_key": "E2-REF"
+        }
+      ],
+      "analysis": {
+        "rga_effect_without_dsr": "E3-B - E3-A",
+        "dsr_effect_without_rga": "E3-C - E3-A",
+        "full_effect": "E3-D - E3-A",
+        "interaction": "(E3-D - E3-C) - (E3-B - E3-A)"
+      }
+    },
+    {
+      "id": "E4",
+      "name": "federated_initialization_provenance",
+      "status": "audit_required_retraining_conditional",
+      "audit_fields": [
+        "FedACG source revision",
+        "initial model",
+        "data partition seed",
+        "client sampling seed",
+        "training seed",
+        "optimizer and training hyperparameters",
+        "training log",
+        "checkpoint selection rule"
+      ],
+      "prospective_training_seeds_if_needed": [
+        20261112,
+        20261113
+      ],
+      "prospective_methods": [
+        "Source",
+        "ReCAP",
+        "ASR",
+        "full FedRAS"
+      ],
+      "execution_status": "blocked_until_training_recipe_and_compute_are_bound"
+    },
+    {
+      "id": "E5",
+      "name": "additional_visual_domain_shift",
+      "status": "deferred_optional",
+      "candidate_datasets": [
+        "Office-Home",
+        "PACS"
+      ],
+      "blockers": [
+        "compatible classifier",
+        "federated initialization",
+        "source statistics",
+        "defensible continual stream"
+      ]
+    }
+  ],
+  "run_accounting": {
+    "source_plan_estimate": 33,
+    "revised_unique_core_trajectories_at_three_checkpoints": 39,
+    "planned_unique_trajectories_with_one_available_checkpoint": 13,
+    "currently_supported_unique_run1_pilot_trajectories": 7,
+    "count_assumptions": {
+      "E1": "7 arms × 3 checkpoints = 21",
+      "E3": "4 arms × 3 checkpoints = 12",
+      "E2": "4 arms × 3 checkpoints = 12",
+      "exact_overlaps": "E1-A with E3-A; E2-A with E3-B",
+      "reference_reuse": "E2-REF is E3-D and is not an additional E2 treatment row",
+      "unique": "21 + 12 + 12 - 3 - 3 = 39"
+    },
+    "count_reconciliation": "The four E2 treatments are no restoration, random, low displacement, and high displacement. E2-A reuses E3-B. The E2 public reference is E3-D and is already counted in E3, not as an E2 treatment. Thus the unique total is 21 + 12 + 12 - 3 - 3 = 39. This is six above the source estimate because binary anchor-only is not the same arm as full public RGA-only, and drift-only is not the same ranking as the public fisher_drift method.",
+    "available_checkpoint_count": 1,
+    "interpretation": "Only run1 is locally present. The source estimate is 33, but checked runtime behavior makes two proposed arm reuses invalid; the revised unique target is 39. No current three-checkpoint completion is possible with local model weights."
+  },
+  "run_order": {
+    "schedule_file": "run_order.csv",
+    "blocking_factor": "checkpoint",
+    "random_seed": 20261112,
+    "method": "seeded random topological order",
+    "constraint": "E3-D must precede E2-B/C/D because it records their matched restoration schedule.",
+    "shared_rows": [
+      {
+        "run_unit": "base_uniform",
+        "arms": [
+          "E1-A",
+          "E3-A"
+        ]
+      },
+      {
+        "run_unit": "rga_only",
+        "arms": [
+          "E3-B",
+          "E2-A"
+        ]
+      },
+      {
+        "run_unit": "fedras_default_reference",
+        "arms": [
+          "E3-D",
+          "E2-REF"
+        ]
+      }
+    ],
+    "execution_status": "planned_not_launched"
+  },
+  "execution_gates": [
+    "recover or obtain run2 and run3 model weights",
+    "resolve normalized_displacement versus fisher_drift against the final paper method",
+    "implement E1-B, E1-C, E1-D and E1-F diagnostic controls",
+    "add anchor-disagreement input to the DSR-only path",
+    "implement low_displacement selection for E2-C",
+    "verify each result effective config and complete data/stream identity before analysis"
+  ]
+}

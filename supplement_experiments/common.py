@@ -166,7 +166,6 @@ def official_protocol_flags(args) -> list[str]:
         "--fslr_continuous_risk",
         "--fslr_risk_rho_min", "0.0",
         "--fslr_risk_rho_max", "0.10",
-        "--fslr_risk_gamma_ess", "0.50",
         "--fslr_risk_gamma_anchor", "0.50",
         "--fslr_risk_gamma_drift", "0.0",
         "--fslr_risk_tau_drift", "0.35",

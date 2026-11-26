@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from sparse_restore import PeriodicSparseRestorer
-from test.tta_baselines import DeYOAdapter
+from tests.tta_baselines import DeYOAdapter
 from adapters.base import (
     DLRS_METHODS,
     DLRS_REGION_SCALE_MAX,

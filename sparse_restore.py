@@ -65,7 +65,6 @@ class PeriodicSparseRestorer:
         online_fisher_alpha: float = 0.90,
         risk_rho_min: float = 0.0,
         risk_rho_max: float = 0.10,
-        risk_gamma_ess: float = 0.50,
         risk_gamma_anchor: float = 0.50,
         risk_gamma_drift: float = 0.0,
         risk_tau_drift: float = 0.35,
@@ -125,7 +124,6 @@ class PeriodicSparseRestorer:
         # Continuous Risk Parameters (P1)
         self.risk_rho_min = float(risk_rho_min)
         self.risk_rho_max = float(risk_rho_max)
-        self.risk_gamma_ess = float(risk_gamma_ess)
         self.risk_gamma_anchor = float(risk_gamma_anchor)
         self.risk_gamma_drift = float(risk_gamma_drift)
         self.risk_tau_drift = float(risk_tau_drift)
@@ -789,10 +787,8 @@ class PeriodicSparseRestorer:
         elif self.budget_mode == "continuous_risk":
             if self.cooldown_remaining > 0:
                 self.cooldown_remaining -= 1
-            ess_comp = (1.0 - ess_ratio) if ess_ratio is not None else (1.0 - (reliability if reliability is not None else 0.5))
             anchor_comp = anchor_disagreement if anchor_disagreement is not None else 0.0
             hazard_score = float(max(0.0, min(1.0,
-                self.risk_gamma_ess * ess_comp +
                 self.risk_gamma_anchor * anchor_comp
             )))
             drift_factor = float(max(0.0, min(1.0, current_drift / max(1e-6, self.risk_tau_drift))))

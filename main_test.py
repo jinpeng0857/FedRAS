@@ -118,7 +118,7 @@ from metrics import (
     summarize_corruptions,
 )
 
-from test.tta_baselines import (
+from tests.tta_baselines import (
     CoTTAAdapter,
     DeYOAdapter,
     PeTTAAdapter,
@@ -204,7 +204,7 @@ def parse_args():
         "--tta_method",
         choices=TTA_METHODS,
         default=None,
-        help="Matched TTA comparison method. Default entry is feddr.",
+        help="Matched TTA comparison method. Default entry is fedras (feddr alias supported).",
     )
     parser.add_argument(
         "--strict_mechanism_ablation",
@@ -629,12 +629,6 @@ def parse_args():
         help="Maximum restore budget ratio for continuous risk FSLR.",
     )
     parser.add_argument(
-        "--fslr_risk_gamma_ess",
-        type=float,
-        default=0.50,
-        help="Weight of (1 - ESS/B) in continuous effective risk calculation.",
-    )
-    parser.add_argument(
         "--fslr_risk_gamma_anchor",
         type=float,
         default=0.50,
@@ -723,8 +717,8 @@ def apply_official_baseline_config(args):
 
 
 def apply_feddr_primary_config(args, public_tta_method):
-    """Fix the public FedDR entrypoint to the retained primary configuration."""
-    if public_tta_method != "feddr":
+    """Fix the public FedRAS (feddr alias) entrypoint to the retained primary configuration."""
+    if public_tta_method not in ("fedras", "feddr"):
         if getattr(args, "dlrs_view_consistency", None) is None:
             args.dlrs_view_consistency = False
         if getattr(args, "dlrs_view_alpha", None) is None:
@@ -746,7 +740,11 @@ def apply_feddr_primary_config(args, public_tta_method):
 
     explicit_options = getattr(args, "_explicit_cli_options", set())
     if "--dlrs_batch_mean" not in explicit_options:
-        args.dlrs_normalize_by_weight = FEDDR_PRIMARY_NORMALIZE_BY_WEIGHT
+        dataset_name = str(getattr(args, "dataset", "")).lower()
+        if "tiny" in dataset_name:
+            args.dlrs_normalize_by_weight = True
+        else:
+            args.dlrs_normalize_by_weight = FEDDR_PRIMARY_NORMALIZE_BY_WEIGHT
     if "--dlrs_weight_mode" not in explicit_options:
         args.dlrs_weight_mode = FEDDR_PRIMARY_WEIGHT_MODE
     args.disable_fslr_reliability_gate = (

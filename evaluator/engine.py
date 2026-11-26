@@ -46,8 +46,8 @@ from evaluator.corruption_runner import (
 )
 from metrics.collector import _counter_delta, _mapping_delta, resource_summary
 from metrics.schema import restoration_stats_for_output, summarize_corruptions
-from test.sar_official.sam import SAM
-from test.tta_baselines import (
+from tests.sar_official.sam import SAM
+from tests.tta_baselines import (
     CoTTAAdapter,
     DeYOAdapter,
     PeTTAAdapter,
@@ -399,7 +399,6 @@ def build_main_adapter(
             online_fisher_beta=getattr(args, "fslr_online_fisher_beta", 0.0),
             risk_rho_min=getattr(args, "fslr_risk_rho_min", 0.0),
             risk_rho_max=getattr(args, "fslr_risk_rho_max", 0.10),
-            risk_gamma_ess=getattr(args, "fslr_risk_gamma_ess", 0.50),
             risk_gamma_anchor=getattr(args, "fslr_risk_gamma_anchor", 0.50),
             risk_gamma_drift=getattr(args, "fslr_risk_gamma_drift", 0.0),
             risk_tau_drift=getattr(args, "fslr_risk_tau_drift", 0.35),

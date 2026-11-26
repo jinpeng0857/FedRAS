@@ -6,7 +6,7 @@ import torch
 from torch import nn
 
 from main_test import _counter_delta
-from test.tta_baselines import (
+from tests.tta_baselines import (
     CoTTAAdapter,
     DeYOAdapter,
     configure_cotta_model,

@@ -22,7 +22,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from adapters.base import DisabledSparseRestorer
-from test.tta_baselines import _ExternalAdapterBase, softmax_entropy
+from tests.tta_baselines import _ExternalAdapterBase, softmax_entropy
 
 
 class CoLAState(nn.Module):

@@ -1,6 +1,0 @@
-outputs/*
-logs/*
-*.pyc
-*.ipynb
-*.pth
-fig/

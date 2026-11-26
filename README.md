@@ -4,7 +4,7 @@ FedRAS studies continual test-time adaptation of federated models using reliabil
 
 ## Main evaluation
 
-`main_test.py` runs the matched CIFAR-C evaluation. Its default method is registered in the code as `feddr`, which combines DLRS and FSLR. Use the corresponding trained checkpoint, source statistics, and dataset paths for your run.
+`main_test.py` runs the matched CIFAR-C / Tiny-ImageNet-C evaluation. Its default method is `fedras` (with `feddr` kept as a backward-compatible alias), combining RGA (DLRS) and DSR (FSLR). Use the corresponding trained checkpoint, source statistics, and dataset paths for your run.
 
 ```bash
 python main_test.py --help
@@ -50,3 +50,11 @@ python -m unittest tests.test_dlrs tests.test_sparse_restore
 ```
 
 Additional regression tests are in [tests/](tests/).
+
+## Summarize Results
+
+Generate a Markdown summary table from `result.json` files:
+
+```bash
+python tools/summarize_results.py --input-dir outputs/fedras_pdf_supplement --output outputs/summary_tables.md
+```
