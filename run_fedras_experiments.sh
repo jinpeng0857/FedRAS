@@ -36,7 +36,7 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd -- "$root"
 revision_root=${REVISION_ROOT:-"$root"}
 asset_root=${ASSET_ROOT:-"$root"}
-output_root=${OUTPUT_ROOT:-"$root/output/fedras_pdf_supplement"}
+output_root=${OUTPUT_ROOT:-"$root/outputs/fedras_pdf_supplement"}
 python_bin=${PYTHON_BIN:-python}
 device=${DEVICE:-cuda:0}
 data_root=${DATA_ROOT:-"$asset_root/data/CIFAR-100-C"}
@@ -47,9 +47,9 @@ runner="$revision_root/scripts/revision_20261018/run_case.py"
 model_root="$asset_root/train/results/cifar100_100clients_alpha0.3_equal/fedacg_resnet18"
 checkpoints=("" "${CKPT1:-"$model_root/cifar100_resnet18_run1/model_round499.pt"}"
   "${CKPT2:-"$model_root/run2/model_round499.pt"}" "${CKPT3:-"$model_root/run3/model_round499.pt"}")
-statistics=("" "${COV_PATH1:-"$asset_root/test/outputs/fedacg_run1_statistics.pt"}"
-  "${COV_PATH2:-"$asset_root/test/outputs/fedacg_run2_statistics.pt"}"
-  "${COV_PATH3:-"$asset_root/test/outputs/fedacg_run3_statistics.pt"}")
+statistics=("" "${COV_PATH1:-"$asset_root/tests/outputs/fedacg_run1_statistics.pt"}"
+  "${COV_PATH2:-"$asset_root/tests/outputs/fedacg_run2_statistics.pt"}"
+  "${COV_PATH3:-"$asset_root/tests/outputs/fedacg_run3_statistics.pt"}")
 indices=(1)
 case "$stage" in components|random|fixed|all) indices=(1 2 3) ;; esac
 if [[ "$stage" == tiny-batch-mean ]]; then
@@ -57,7 +57,7 @@ if [[ "$stage" == tiny-batch-mean ]]; then
   clean_root=${TINY_CLEAN_ROOT:-"$asset_root/data/tiny-imagenet-200"}
   tiny_model_root="$asset_root/train/results/tiny-imagenet_100clients_alpha0.3_equal/fedacg_resnet18"
   checkpoints[1]=${TINY_CKPT:-"$tiny_model_root/tiny_imagenet_resnet18_fedacg_20260907_seed42/model_round499.pt"}
-  statistics[1]=${TINY_COV_PATH:-"$asset_root/test/outputs/tiny_resnet18_unified_20260907/statistics.pt"}
+  statistics[1]=${TINY_COV_PATH:-"$asset_root/tests/outputs/tiny_resnet18_unified_20260907/statistics.pt"}
 fi
 
 if [[ "$stage" == cost || "$stage" == all ]]; then
@@ -115,10 +115,8 @@ common=(
   --fslr_grad_clip_norm 15 --disable_fslr_reliability_gate --fslr_hierarchical_budget
   --fslr_layer_quota_cap 0.35 --fslr_selection_criterion drift_only
 )
-# Zero ESS coefficient is equivalent to setting controller_ess=1 in the
-# original disagreement wrapper. This also avoids wrapper overhead in Table 9.
 adaptive=(
-  --fslr_continuous_risk --fslr_risk_gamma_ess 0 --fslr_risk_gamma_anchor 0.5
+  --fslr_continuous_risk --fslr_risk_gamma_anchor 0.5
   --fslr_risk_rho_min 0 --fslr_risk_rho_max 0.10 --fslr_risk_tau_drift 0.35
   --recovery_interval 10 --restore_strength 0.7 --fslr_event_trigger
 )
@@ -161,8 +159,10 @@ run_trial() (
     printf 'Preserved previous trial: %s/trial\n' "$archive"
   fi
   mkdir -- "$trial_dir"
+  printf '[%s] Starting trial: %s\n' "$(date '+%H:%M:%S')" "$name"
   "${command[@]}" 2>&1 | tee "$trial_dir/run.log"
   printf '%s\n' "$invocation" > "$trial_dir/complete"
+  printf '[%s] Finished trial: %s\n' "$(date '+%H:%M:%S')" "$name"
 )
 
 if [[ "$stage" == tiny-batch-mean ]]; then
