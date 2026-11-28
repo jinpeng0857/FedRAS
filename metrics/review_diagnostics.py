@@ -93,14 +93,18 @@ def summarize_review_batch(
 
 
 def write_review_batch_jsonl(
-    path: str | Path, metadata: Mapping[str, object], record: Mapping[str, object]
+    path_or_stream, metadata: Mapping[str, object], record: Mapping[str, object]
 ) -> None:
     """Append one complete, reconstructable review record as a JSONL row."""
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
     row = {**metadata, **record}
+    line = json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n"
+    if hasattr(path_or_stream, "write"):
+        path_or_stream.write(line)
+        return
+    target = Path(path_or_stream)
+    target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("a", encoding="utf-8") as stream:
-        stream.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
+        stream.write(line)
         stream.flush()
 
 

@@ -6,7 +6,11 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from sparse_restore import PeriodicSparseRestorer
+from sparse_restore import (
+    PeriodicSparseRestorer,
+    compute_affine_anchor_squares,
+    compute_affine_drift_stats,
+)
 
 # Common constants
 REGION_SCALE = 1.2
@@ -188,6 +192,7 @@ class DisabledSparseRestorer:
         self.anchors = {
             name: param.detach().clone() for name, param in self.params.items()
         }
+        self._anchor_squares = compute_affine_anchor_squares(self.params, self.anchors)
         self.selected_count = 0
         self.num_batches = 0
 
@@ -197,28 +202,9 @@ class DisabledSparseRestorer:
 
     @torch.no_grad()
     def drift_stats(self):
-        accumulators = {
-            "total": [0.0, 0.0],
-            "gamma": [0.0, 0.0],
-            "beta": [0.0, 0.0],
-        }
-        for name, param in self.params.items():
-            anchor = self.anchors[name].to(
-                device=param.device, dtype=param.dtype
-            )
-            group = "gamma" if name.endswith(".weight") else "beta"
-            delta_square = float((param.detach() - anchor).square().sum().cpu())
-            anchor_square = float(anchor.square().sum().cpu())
-            accumulators["total"][0] += delta_square
-            accumulators["total"][1] += anchor_square
-            accumulators[group][0] += delta_square
-            accumulators[group][1] += anchor_square
-        return {
-            name: float(
-                math.sqrt(delta_square) / (math.sqrt(anchor_square) + 1e-12)
-            )
-            for name, (delta_square, anchor_square) in accumulators.items()
-        }
+        return compute_affine_drift_stats(
+            self.params, self.anchors, self._anchor_squares
+        )
 
     @property
     def stats(self):

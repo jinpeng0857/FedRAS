@@ -57,6 +57,16 @@ DATASET_STATS = {
 }
 
 
+def _extract_tensor_normalize_stats(transform):
+    """Return (mean, std) when transform is standard ToTensor + Normalize, else None."""
+    if not isinstance(transform, transforms.Compose) or len(transform.transforms) != 2:
+        return None
+    first, second = transform.transforms
+    if isinstance(first, transforms.ToTensor) and isinstance(second, transforms.Normalize):
+        return second.mean, second.std
+    return None
+
+
 class CIFARCDataset(Dataset):
     """One corruption and severity block from the official CIFAR-C arrays."""
 
@@ -87,15 +97,31 @@ class CIFARCDataset(Dataset):
                 f"got {len(labels)}"
             )
         self.transform = transform
+        self._tensor_data = None
+        self._targets_tensor = None
+        norm_stats = _extract_tensor_normalize_stats(transform)
+        if norm_stats is not None:
+            mean, std = norm_stats
+            raw_uint8 = np.array(self.data, copy=True)
+            tensor = torch.from_numpy(raw_uint8).permute(0, 3, 1, 2).float().div_(255.0)
+            mean_t = torch.as_tensor(mean, dtype=torch.float32).view(1, -1, 1, 1)
+            std_t = torch.as_tensor(std, dtype=torch.float32).view(1, -1, 1, 1)
+            tensor.sub_(mean_t).div_(std_t)
+            self._tensor_data = tensor
+            self._targets_tensor = np.asarray(self.targets, dtype=np.int64).tolist()
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, index):
+        if self._tensor_data is not None:
+            return self._tensor_data[index], self._targets_tensor[index]
         image = Image.fromarray(self.data[index])
         return self.transform(image), int(self.targets[index])
 
     def close(self):
+        self._tensor_data = None
+        self._targets_tensor = None
         if hasattr(self.data, "_mmap") and self.data._mmap is not None:
             self.data._mmap.close()
 

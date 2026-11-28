@@ -11,10 +11,74 @@ while strictly avoiding false alarms on clean domains.
 """
 
 import math
-from typing import Dict, Mapping, Optional, Sequence
+from typing import Dict, Mapping, Optional, Sequence, Tuple
 
 import torch
 from torch import nn
+
+
+@torch.no_grad()
+def compute_affine_anchor_squares(
+    params: Mapping[str, nn.Parameter],
+    anchors: Mapping[str, torch.Tensor],
+) -> Tuple[float, float, float]:
+    """Precompute total, gamma, and beta squared norms of immutable anchors."""
+    if not params:
+        return 0.0, 0.0, 0.0
+    anchor_sq_terms = [anchors[name].square().sum() for name in params]
+    anchor_vals = torch.stack(anchor_sq_terms).cpu().tolist()
+    is_gamma = [name.endswith(".weight") for name in params]
+    return (
+        math.fsum(anchor_vals),
+        math.fsum(v for v, g in zip(anchor_vals, is_gamma) if g),
+        math.fsum(v for v, g in zip(anchor_vals, is_gamma) if not g),
+    )
+
+
+@torch.no_grad()
+def compute_affine_drift_stats(
+    params: Mapping[str, nn.Parameter],
+    anchors: Mapping[str, torch.Tensor],
+    anchor_squares: Optional[Tuple[float, float, float]] = None,
+) -> Dict[str, float]:
+    """Compute normalized affine drift across all, gamma, and beta tensors in one GPU-CPU sync."""
+    if not params:
+        return {"total": 0.0, "gamma": 0.0, "beta": 0.0}
+    delta_sq_terms = []
+    is_gamma = []
+    need_anchor_sq = anchor_squares is None
+    anchor_sq_terms = [] if need_anchor_sq else None
+
+    for name, param in params.items():
+        anchor = anchors[name]
+        if anchor.device != param.device or anchor.dtype != param.dtype:
+            anchor = anchor.to(device=param.device, dtype=param.dtype)
+        delta_sq_terms.append((param.detach() - anchor).square().sum())
+        is_gamma.append(name.endswith(".weight"))
+        if need_anchor_sq:
+            anchor_sq_terms.append(anchor.square().sum())
+
+    if need_anchor_sq:
+        packed = torch.stack(delta_sq_terms + anchor_sq_terms).cpu().tolist()
+        half = len(delta_sq_terms)
+        delta_vals = packed[:half]
+        anchor_vals = packed[half:]
+        anchor_total = math.fsum(anchor_vals)
+        anchor_gamma = math.fsum(v for v, g in zip(anchor_vals, is_gamma) if g)
+        anchor_beta = math.fsum(v for v, g in zip(anchor_vals, is_gamma) if not g)
+    else:
+        delta_vals = torch.stack(delta_sq_terms).cpu().tolist()
+        anchor_total, anchor_gamma, anchor_beta = anchor_squares
+
+    delta_total = math.fsum(delta_vals)
+    delta_gamma = math.fsum(v for v, g in zip(delta_vals, is_gamma) if g)
+    delta_beta = math.fsum(v for v, g in zip(delta_vals, is_gamma) if not g)
+
+    return {
+        "total": float(math.sqrt(delta_total) / (math.sqrt(anchor_total) + 1e-12)),
+        "gamma": float(math.sqrt(delta_gamma) / (math.sqrt(anchor_gamma) + 1e-12)),
+        "beta": float(math.sqrt(delta_beta) / (math.sqrt(anchor_beta) + 1e-12)),
+    }
 
 
 def load_fishers(statistics_path: str) -> Mapping[str, torch.Tensor]:
@@ -179,6 +243,7 @@ class PeriodicSparseRestorer:
         self.anchors = {
             name: param.detach().clone() for name, param in self.params.items()
         }
+        self._anchor_squares = compute_affine_anchor_squares(self.params, self.anchors)
         self.total_trainable_elements = sum(
             param.numel() for param in self.params.values()
         )
@@ -380,13 +445,11 @@ class PeriodicSparseRestorer:
     def _current_absolute_drift(self) -> torch.Tensor:
         drift = []
         for name, param in self.params.items():
-            anchor = self.anchors[name].to(
-                device=param.device, dtype=param.dtype
-            )
-            drift.append(
-                (param.detach() - anchor).abs().flatten().float().cpu()
-            )
-        return torch.cat(drift)
+            anchor = self.anchors[name]
+            if anchor.device != param.device or anchor.dtype != param.dtype:
+                anchor = anchor.to(device=param.device, dtype=param.dtype)
+            drift.append((param.detach() - anchor).abs().flatten().float())
+        return torch.cat(drift).cpu()
 
     def _select_fisher_drift_indices(
         self, ratio: float, absolute_drift: torch.Tensor
@@ -993,27 +1056,9 @@ class PeriodicSparseRestorer:
     @torch.no_grad()
     def drift_stats(self):
         """Return normalized affine drift from the deployment anchor."""
-        accumulators = {
-            "total": [0.0, 0.0],
-            "gamma": [0.0, 0.0],
-            "beta": [0.0, 0.0],
-        }
-        for name, param in self.params.items():
-            anchor = self.anchors[name].to(
-                device=param.device, dtype=param.dtype
-            )
-            group = "gamma" if name.endswith(".weight") else "beta"
-            delta_square = float((param.detach() - anchor).square().sum().cpu())
-            anchor_square = float(anchor.square().sum().cpu())
-            accumulators["total"][0] += delta_square
-            accumulators["total"][1] += anchor_square
-            accumulators[group][0] += delta_square
-            accumulators[group][1] += anchor_square
-
-        return {
-            name: float(math.sqrt(delta_square) / (math.sqrt(anchor_square) + 1e-12))
-            for name, (delta_square, anchor_square) in accumulators.items()
-        }
+        return compute_affine_drift_stats(
+            self.params, self.anchors, self._anchor_squares
+        )
 
     @property
     def stats(self):

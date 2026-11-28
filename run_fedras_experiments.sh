@@ -39,6 +39,7 @@ asset_root=${ASSET_ROOT:-"$root"}
 output_root=${OUTPUT_ROOT:-"$root/outputs/fedras_pdf_supplement"}
 python_bin=${PYTHON_BIN:-python}
 device=${DEVICE:-cuda:0}
+num_workers=${NUM_WORKERS:-0}
 data_root=${DATA_ROOT:-"$asset_root/data/CIFAR-100-C"}
 clean_root=${CLEAN_ROOT:-"$asset_root/data/cifar100"}
 fixed_strength=${FIXED_STRENGTH:-0.7}
@@ -109,7 +110,7 @@ common=(
   --dataset cifar100 --federated_method fedacg --anchor_key lookahead_anchor
   --tta_method dlrs_fslr --revision-ranking drift_only --review_continual_only --device "$device"
   --cifar_c_path "$data_root" --clean_data_root "$clean_root"
-  --batch_size 128 --seed 0 --num_workers 2 --max_batches -1 --adapt_lr 0.001
+  --batch_size 128 --seed 0 --num_workers "$num_workers" --max_batches -1 --adapt_lr 0.001
   --dlrs_sample_reliability_mode entropy --dlrs_weight_mode sample_only
   --dlrs_hybrid_threshold 0 --dlrs_anchor_rectify_beta 0.3 --disable_dlrs_view_consistency
   --fslr_grad_clip_norm 15 --disable_fslr_reliability_gate --fslr_hierarchical_budget
@@ -169,7 +170,7 @@ if [[ "$stage" == tiny-batch-mean ]]; then
   common=(
     --dataset tiny-imagenet --federated_method fedacg --anchor_key lookahead_anchor
     --tta_method feddr --device "$device" --cifar_c_path "$data_root"
-    --clean_data_root "$clean_root" --batch_size 128 --seed 0 --num_workers 2
+    --clean_data_root "$clean_root" --batch_size 128 --seed 0 --num_workers "$num_workers"
     --max_batches -1 --adapt_lr 0.001 --dlrs_batch_mean
   )
   run_trial 1 tiny-batch-mean/resnet18

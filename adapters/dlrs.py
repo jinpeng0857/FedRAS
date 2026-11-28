@@ -412,8 +412,9 @@ class DLRSAdapter(DualReliabilityAdapter):
 
         entropy_mask = prediction_entropy.detach() < self.deyo_entropy_margin
 
-        # Compute Lookahead Anchor Disagreement A_t
-        anchor_disagreement = None
+        # Compute Lookahead Anchor Disagreement A_t (keep tensor on GPU until single packed sync)
+        anchor_prediction = None
+        anchor_disagreement_tensor = None
         disagree_vector = None
         if self.anchor_model is not None:
             with torch.no_grad():
@@ -421,9 +422,7 @@ class DLRSAdapter(DualReliabilityAdapter):
                 anchor_prediction = anchor_logits.argmax(dim=1)
                 current_prediction = logits.detach().argmax(dim=1)
                 disagree_vector = current_prediction.ne(anchor_prediction)
-                anchor_disagreement = float(
-                    disagree_vector.float().mean().cpu()
-                )
+                anchor_disagreement_tensor = disagree_vector.float().mean()
 
         # Fast-DLRS Early Exit for high-confidence samples
         early_exit_mask = None
@@ -433,16 +432,24 @@ class DLRSAdapter(DualReliabilityAdapter):
                 & (prediction_margin >= self.early_exit_margin_threshold)
             )
 
-        with torch.no_grad():
-            if self.fast_perturbation:
-                perturbed_images = F.dropout2d(images.detach(), p=0.1, training=True)
-                destroyed_logits = self.model(perturbed_images)
-            elif early_exit_mask is not None and early_exit_mask.all():
-                destroyed_logits = logits.detach()
-            else:
-                destroyed_logits = self.model(
-                    self._shuffle_patches(images.detach())
-                )
+        needs_plpd = (
+            self.rga_cue_ablation == "reduced"
+            or (
+                self.sample_reliability_mode != "entropy"
+                and (self.use_fslr or self.rga_ablation_variant == "full")
+            )
+        )
+        if needs_plpd:
+            with torch.no_grad():
+                if self.fast_perturbation:
+                    perturbed_images = F.dropout2d(images.detach(), p=0.1, training=True)
+                    destroyed_logits = self.model(perturbed_images)
+                elif early_exit_mask is not None and early_exit_mask.all():
+                    destroyed_logits = logits.detach()
+                else:
+                    destroyed_logits = self.model(
+                        self._shuffle_patches(images.detach())
+                    )
 
         dual_consistency = None
         if self.dual_perturbation:
@@ -453,15 +460,19 @@ class DLRSAdapter(DualReliabilityAdapter):
                 weak_logits.softmax(dim=1),
             )
         detached_probability = probability.detach()
-        pseudo_labels = detached_probability.argmax(1, keepdim=True)
-        original_confidence = detached_probability.gather(
-            1, pseudo_labels
-        ).squeeze(1)
-        destroyed_confidence = destroyed_logits.softmax(1).gather(
-            1, pseudo_labels
-        ).squeeze(1)
-        plpd = original_confidence - destroyed_confidence
-        plpd_mask = plpd.detach() > self.deyo_plpd_threshold
+        if needs_plpd:
+            pseudo_labels = detached_probability.argmax(1, keepdim=True)
+            original_confidence = detached_probability.gather(
+                1, pseudo_labels
+            ).squeeze(1)
+            destroyed_confidence = destroyed_logits.softmax(1).gather(
+                1, pseudo_labels
+            ).squeeze(1)
+            plpd = original_confidence - destroyed_confidence
+            plpd_mask = plpd.detach() > self.deyo_plpd_threshold
+        else:
+            plpd = torch.zeros_like(prediction_entropy)
+            plpd_mask = torch.zeros_like(entropy_mask)
 
         def _base_sample_reliability(cue_ablation: str):
             if cue_ablation == "reduced":
@@ -667,10 +678,25 @@ class DLRSAdapter(DualReliabilityAdapter):
 
         batch_size_f = float(images.size(0))
         weight_sum = selected_joint_weights.sum()
-        joint_weight_square_sum = float(
-            selected_joint_weights.detach().square().sum().cpu()
+        batch_avg_prob = detached_probability.mean(dim=0).clamp_min(1e-12)
+        pre_sync_tensors = [
+            selected_joint_weights.detach().square().sum().float(),
+            weight_sum.detach().float(),
+            recovery_reliability.mean().clamp(0.0, 1.0).float(),
+            prediction_entropy.detach().mean().float(),
+            (-(batch_avg_prob * batch_avg_prob.log()).sum()).float(),
+        ]
+        if anchor_disagreement_tensor is not None:
+            pre_sync_tensors.append(anchor_disagreement_tensor.float())
+        pre_sync_vals = torch.stack(pre_sync_tensors).cpu().tolist()
+        joint_weight_square_sum = float(pre_sync_vals[0])
+        joint_weight_sum_val = float(pre_sync_vals[1])
+        recovery_credit = float(pre_sync_vals[2])
+        sample_entropy_mean = float(pre_sync_vals[3])
+        marginal_entropy = float(pre_sync_vals[4])
+        anchor_disagreement = (
+            float(pre_sync_vals[5]) if anchor_disagreement_tensor is not None else None
         )
-        joint_weight_sum_val = float(weight_sum.detach().cpu())
         effective_sample_size = (
             joint_weight_sum_val * joint_weight_sum_val
             / max(joint_weight_square_sum, 1e-12)
@@ -678,9 +704,6 @@ class DLRSAdapter(DualReliabilityAdapter):
 
         sb_ratio = float(joint_weight_sum_val / max(batch_size_f, 1.0))
         ess_ratio = float(effective_sample_size / max(batch_size_f, 1.0))
-        recovery_credit = float(
-            recovery_reliability.mean().clamp(0.0, 1.0).cpu()
-        )
 
         # Check skip-update safety protection for low quality batches
         should_skip_update = (
@@ -757,9 +780,6 @@ class DLRSAdapter(DualReliabilityAdapter):
         elif should_skip_update:
             self.counters["skipped_low_quality_batches"] += 1
 
-        sample_entropy_mean = float(prediction_entropy.detach().mean().cpu())
-        batch_avg_prob = probability.detach().mean(dim=0).clamp_min(1e-12)
-        marginal_entropy = float(-(batch_avg_prob * batch_avg_prob.log()).sum().cpu())
         if self.use_fslr:
             recovered = self.restorer.step(
                 reliability=recovery_credit,
@@ -780,28 +800,52 @@ class DLRSAdapter(DualReliabilityAdapter):
 
         selected_weight_values = selected_soft_weights.detach()
         selected_joint_weight_values = selected_joint_weights.detach()
-        if selected_weight_values.numel() > 0:
-            weight_min = float(selected_weight_values.min().cpu())
-            weight_max = float(selected_weight_values.max().cpu())
+        selected_rel_detached = selected_reliability.detach()
+        selected_reg_detached = selected_region_scale.detach()
+        post_sync_tensors = [
+            selected_mask.sum().float(),
+            (prediction_margin > 0).sum().float(),
+            prediction_margin.sum().float(),
+            entropy_mask.sum().float(),
+            plpd_mask.sum().float(),
+            region_mask.sum().float(),
+            selected_weight_values.sum().float(),
+            selected_weight_values.square().sum().float(),
+            selected_rel_detached.sum().float(),
+            selected_reg_detached.sum().float(),
+        ]
+        has_soft = selected_weight_values.numel() > 0
+        has_joint = selected_joint_weight_values.numel() > 0
+        has_rel = selected_rel_detached.numel() > 0
+        if has_soft:
+            post_sync_tensors.extend([selected_weight_values.min().float(), selected_weight_values.max().float()])
+        if has_joint:
+            post_sync_tensors.extend([selected_joint_weight_values.min().float(), selected_joint_weight_values.max().float()])
+        if has_rel:
+            post_sync_tensors.extend([
+                selected_rel_detached.min().float(),
+                selected_rel_detached.max().float(),
+                selected_reg_detached.min().float(),
+                selected_reg_detached.max().float(),
+            ])
+        post_vals = torch.stack(post_sync_tensors).cpu().tolist()
+        idx = 10
+        if has_soft:
+            weight_min, weight_max = float(post_vals[idx]), float(post_vals[idx + 1])
+            idx += 2
         else:
-            weight_min = 0.0
-            weight_max = 0.0
-        if selected_joint_weight_values.numel() > 0:
-            joint_weight_min = float(selected_joint_weight_values.min().cpu())
-            joint_weight_max = float(selected_joint_weight_values.max().cpu())
+            weight_min, weight_max = 0.0, 0.0
+        if has_joint:
+            joint_weight_min, joint_weight_max = float(post_vals[idx]), float(post_vals[idx + 1])
+            idx += 2
         else:
-            joint_weight_min = 0.0
-            joint_weight_max = 0.0
-        if selected_reliability.numel() > 0:
-            reliability_min = float(selected_reliability.min().cpu())
-            reliability_max = float(selected_reliability.max().cpu())
-            region_scale_min = float(selected_region_scale.min().cpu())
-            region_scale_max = float(selected_region_scale.max().cpu())
+            joint_weight_min, joint_weight_max = 0.0, 0.0
+        if has_rel:
+            reliability_min, reliability_max = float(post_vals[idx]), float(post_vals[idx + 1])
+            region_scale_min, region_scale_max = float(post_vals[idx + 2]), float(post_vals[idx + 3])
         else:
-            reliability_min = 0.0
-            reliability_max = 0.0
-            region_scale_min = 0.0
-            region_scale_max = 0.0
+            reliability_min, reliability_max = 0.0, 0.0
+            region_scale_min, region_scale_max = 0.0, 0.0
 
         # The evaluator consumes these transient vectors to verify whether
         # RGA assigns lower update weight to incorrect predictions. They are
@@ -822,37 +866,31 @@ class DLRSAdapter(DualReliabilityAdapter):
             "sb_ratio": sb_ratio,
             "ess_ratio": ess_ratio,
             "skipped_low_quality": should_skip_update,
-            "quality_passed": int(selected_mask.sum().item()),
-            "margin_passed": int((prediction_margin > 0).sum().item()),
-            "margin_sum": float(prediction_margin.sum().item()),
-            "entropy_passed": int(entropy_mask.sum().item()),
-            "deyo_entropy_passed": int(entropy_mask.sum().item()),
-            "plpd_passed": int(plpd_mask.sum().item()),
+            "quality_passed": int(round(post_vals[0])),
+            "margin_passed": int(round(post_vals[1])),
+            "margin_sum": float(post_vals[2]),
+            "entropy_passed": int(round(post_vals[3])),
+            "deyo_entropy_passed": int(round(post_vals[3])),
+            "plpd_passed": int(round(post_vals[4])),
             "relative_entropy_passed": 0,
             "absolute_entropy_passed": 0,
             "relative_entropy_threshold": None,
             "effective_entropy_threshold": None,
-            "nonredundant": int(selected_mask.sum().item()),
-            "region_reliable": int(region_mask.sum().item()),
+            "nonredundant": int(round(post_vals[0])),
+            "region_reliable": int(round(post_vals[5])),
             "selected": int(selected_indices.numel()),
-            "recap_soft_weight_sum": float(selected_weight_values.sum().cpu()),
-            "recap_soft_weight_square_sum": float(
-                selected_weight_values.square().sum().cpu()
-            ),
+            "recap_soft_weight_sum": float(post_vals[6]),
+            "recap_soft_weight_square_sum": float(post_vals[7]),
             "recap_soft_weight_count": int(selected_weight_values.numel()),
             "recap_soft_weight_min": weight_min,
             "recap_soft_weight_max": weight_max,
             "dlrs_reliability_min": reliability_min,
             "dlrs_reliability_max": reliability_max,
-            "dlrs_reliability_sum": float(
-                selected_reliability.detach().sum().cpu()
-            ),
+            "dlrs_reliability_sum": float(post_vals[8]),
             "dlrs_reliability_count": int(selected_reliability.numel()),
             "dlrs_region_scale_min": region_scale_min,
             "dlrs_region_scale_max": region_scale_max,
-            "dlrs_region_scale_sum": float(
-                selected_region_scale.detach().sum().cpu()
-            ),
+            "dlrs_region_scale_sum": float(post_vals[9]),
             "dlrs_joint_weight_min": joint_weight_min,
             "dlrs_joint_weight_max": joint_weight_max,
             "dlrs_joint_weight_sum": joint_weight_sum_val,
@@ -877,6 +915,8 @@ class DLRSAdapter(DualReliabilityAdapter):
             "rga_joint_weight_vector": rga_joint_weight_vector.detach(),
             "rga_applied_weight_vector": rga_applied_weight_vector.detach(),
         }
+        if anchor_prediction is not None:
+            batch_stats["anchor_prediction_vector"] = anchor_prediction.detach()
         self.counters["samples"] += batch_stats["samples"]
         self.counters["quality_passed"] += batch_stats["quality_passed"]
         self.counters["margin_passed"] += batch_stats["margin_passed"]

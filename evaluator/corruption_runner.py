@@ -87,6 +87,11 @@ def evaluate_corruption(
     asr_reset_events = 0
     last_anchor_drift = None
     sample_offset = 0
+    review_stream = None
+    if write_review_diagnostics:
+        review_target = Path(review_path)
+        review_target.parent.mkdir(parents=True, exist_ok=True)
+        review_stream = review_target.open("a", encoding="utf-8")
     try:
         for batch_index, (images, labels) in enumerate(loader):
             if args.max_batches > 0 and batch_index >= args.max_batches:
@@ -100,10 +105,14 @@ def evaluate_corruption(
             adaptation_seconds += time.perf_counter() - start
             if write_review_diagnostics:
                 current_predictions = logits.detach().argmax(dim=1).cpu().tolist()
-                with torch.no_grad():
-                    anchor_predictions = (
-                        review_anchor_model(images).argmax(dim=1).cpu().tolist()
-                    )
+                anchor_pred_vec = batch_stats.get("anchor_prediction_vector")
+                if anchor_pred_vec is not None:
+                    anchor_predictions = anchor_pred_vec.detach().cpu().tolist()
+                else:
+                    with torch.no_grad():
+                        anchor_predictions = (
+                            review_anchor_model(images).argmax(dim=1).cpu().tolist()
+                        )
                 beta_a = float(getattr(args, "review_beta_a", 0.3))
                 weights = anchor_rectification_weights(
                     current_predictions, anchor_predictions, beta=beta_a
@@ -156,7 +165,7 @@ def evaluate_corruption(
                     if torch.is_tensor(vector):
                         record[output_key] = vector.detach().cpu().tolist()
                 write_review_batch_jsonl(
-                    review_path,
+                    review_stream,
                     {
                         "run_id": getattr(args, "review_run_id", None),
                         "model_path": args.model_path,
@@ -252,6 +261,9 @@ def evaluate_corruption(
                 )
                 anchor_diag_js_sum += float(js_values.sum().item())
     finally:
+        if review_stream is not None:
+            review_stream.flush()
+            review_stream.close()
         dataset.close()
     if flush_adapter:
         adapter.finalize()
