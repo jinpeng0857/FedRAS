@@ -216,6 +216,15 @@ def load_petta_statistics(path: str):
     return means, variances
 
 
+def _normalized_path_parts(path_str: str) -> Tuple[str, ...]:
+    """Split a path across Windows/POSIX separators into normalized segments."""
+    return tuple(
+        part
+        for part in str(path_str).replace("\\", "/").split("/")
+        if part and part != "."
+    )
+
+
 def validate_statistics(meta, args, num_classes):
     stats_classes = meta.get("num_classes")
     if stats_classes is not None and int(stats_classes) != num_classes:
@@ -235,12 +244,13 @@ def validate_statistics(meta, args, num_classes):
         )
     stats_model = meta.get("model_path")
     if stats_model is not None:
-        expected = Path(args.model_path).expanduser().resolve()
-        recorded = Path(stats_model).expanduser().resolve()
-        if recorded != expected:
+        expected_parts = _normalized_path_parts(Path(args.model_path).expanduser().resolve())
+        recorded_parts = _normalized_path_parts(stats_model)
+        suffix_len = min(len(expected_parts), len(recorded_parts), 3)
+        if suffix_len == 0 or recorded_parts[-suffix_len:] != expected_parts[-suffix_len:]:
             raise ValueError(
                 "statistics/checkpoint mismatch: "
-                f"statistics={recorded}, evaluation={expected}"
+                f"statistics={stats_model}, evaluation={args.model_path}"
             )
 
 

@@ -22,7 +22,7 @@ import torch
 import torch.nn as nn
 
 from adapters.dlrs import DLRSAdapter
-from evaluator.engine import configure_bn_adaptation
+from evaluator.engine import configure_bn_adaptation, validate_statistics
 from main_test import apply_feddr_primary_config, parse_args
 from scripts.run_paper_ablations import validate_existing_result
 from scripts.summarize_paper_ablations import load_metrics_from_json, summarize_block_a, summarize_block_c
@@ -393,6 +393,50 @@ class TestPaperAblationLogic(unittest.TestCase):
         self.assertTrue(any("bn1" in n for n in trainable_names))
         self.assertTrue(any("layer1" in n for n in trainable_names))
         self.assertFalse(any("layer4" in n for n in trainable_names))
+
+    def test_09_validate_statistics_cross_machine_paths(self):
+        """Cross-OS checkpoint paths with matching trailing segments pass; run mismatches fail."""
+        class EvalArgs:
+            def __init__(self, model_path):
+                self.anchor_key = "lookahead_anchor"
+                self.dataset = "cifar100"
+                self.model_path = model_path
+
+        meta_run1 = {
+            "num_classes": 100,
+            "actual_ckpt_key": "lookahead_anchor",
+            "dataset": "cifar100",
+            "model_path": (
+                "/mnt/sda/PythonProject/CJP_project/FEDEATA/train/results/"
+                "cifar100_100clients_alpha0.3_equal/fedacg_resnet18/"
+                "cifar100_resnet18_run1/model_round499.pt"
+            ),
+        }
+        # Colab/Linux and Windows paths for run1 must pass
+        validate_statistics(
+            meta_run1,
+            EvalArgs(
+                "/content/FEDEATA/train/results/cifar100_100clients_alpha0.3_equal/"
+                "fedacg_resnet18/cifar100_resnet18_run1/model_round499.pt"
+            ),
+            100,
+        )
+        validate_statistics(
+            meta_run1,
+            EvalArgs(
+                r"D:\dp1\FEDEATA\train\results\cifar100_100clients_alpha0.3_equal"
+                r"\fedacg_resnet18\cifar100_resnet18_run1\model_round499.pt"
+            ),
+            100,
+        )
+        # Mismatched run2/run3 or method must still raise ValueError
+        for bad_path in (
+            "/content/FEDEATA/train/results/cifar100_100clients_alpha0.3_equal/fedacg_resnet18/run2/model_round499.pt",
+            "/content/FEDEATA/train/results/cifar100_100clients_alpha0.3_equal/fedacg_resnet18/run3/model_round499.pt",
+            "/content/FEDEATA/train/results/cifar100_100clients_alpha0.3_equal/fedprox_resnet18/cifar100_resnet18_run1/model_round499.pt",
+        ):
+            with self.assertRaises(ValueError):
+                validate_statistics(meta_run1, EvalArgs(bad_path), 100)
 
 
 if __name__ == "__main__":
