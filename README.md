@@ -15,30 +15,10 @@ The statistics script prepares source statistics from a trained checkpoint and s
 
 ## Paper experiments
 
-Preview the supplementary experiment commands from the repository root.
-
-```bash
-bash run_fedras_experiments.sh --help
-bash run_fedras_experiments.sh components --dry-run
-```
-
-The launcher supports component ablations, Appendix F, random and fixed restoration controls, cost, and sensitivity experiments. It runs the bundled `scripts/revision_20261018/run_case.py`. Set `REVISION_ROOT` to use a compatible runtime from another checkout.
-
-Appendix F and component runs write per-trial diagnostics. Restarting a run skips completed trials with the same arguments and archives unfinished trials with their logs. Cost experiments require CUDA and perform an in-process warm-up before each of the three measurements.
-
-A full run requires CIFAR-100, CIFAR-100-C, and readable checkpoints with matching source-statistics files for the selected group. The launcher exposes path overrides through `--help` and writes one `result.json` per trial under `OUTPUT_ROOT`, which defaults to `outputs/fedras_pdf_supplement`. Dry runs print commands without launching evaluation or checking input files.
+Supplementary evaluations use [scripts/revision_20261018/run_case.py](scripts/revision_20261018/run_case.py) (and [scripts/run_tiny_ordered_revision_case.py](scripts/run_tiny_ordered_revision_case.py) for ordered Tiny-ImageNet-C runs).
 
 - [Supplementary experiment configurations and command design](configs/supplement_20261112/README.md)
 - [Additional supplementary experiments](supplement_experiments/README.md)
-
-Run the Tiny-ImageNet-C normalization comparison arm with the FedACG ResNet-18 checkpoint and its matching source statistics.
-
-```bash
-bash run_fedras_experiments.sh tiny-batch-mean --dry-run
-bash run_fedras_experiments.sh tiny-batch-mean
-```
-
-This runs one full evaluation with the mean of the weighted sample losses. For comparison, use a weight-normalized FedRAS result with the same checkpoint, data order, and evaluation settings. The launcher preserves the historical Tiny-ImageNet-C sample order and records its hashes. Use `TINY_CKPT`, `TINY_COV_PATH`, `TINY_DATA_ROOT`, and `TINY_CLEAN_ROOT` to point to the experiment assets.
 
 ## Tests
 
