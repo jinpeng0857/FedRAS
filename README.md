@@ -1,6 +1,6 @@
 # FedRAS
 
-FedRAS studies continual test-time adaptation of federated models using reliability-guided adaptation and sparse restoration. This repository contains the evaluation code, source-statistics preparation, and experiment launchers for the [FedRAS method](paper/fedras_method.tex).
+FedRAS studies continual test-time adaptation of federated models using reliability-guided adaptation and sparse restoration. This repository contains the evaluation code, source-statistics preparation, and experiment launchers for FedRAS.
 
 ## Main evaluation
 
@@ -26,10 +26,9 @@ The launcher supports component ablations, Appendix F, random and fixed restorat
 
 Appendix F and component runs write per-trial diagnostics. Restarting a run skips completed trials with the same arguments and archives unfinished trials with their logs. Cost experiments require CUDA and perform an in-process warm-up before each of the three measurements.
 
-A full run requires CIFAR-100, CIFAR-100-C, and readable checkpoints with matching source-statistics files for the selected group. The launcher exposes path overrides through `--help` and writes one `result.json` per trial under `OUTPUT_ROOT`, which defaults to `output/fedras_pdf_supplement`. Dry runs print commands without launching evaluation or checking input files.
+A full run requires CIFAR-100, CIFAR-100-C, and readable checkpoints with matching source-statistics files for the selected group. The launcher exposes path overrides through `--help` and writes one `result.json` per trial under `OUTPUT_ROOT`, which defaults to `outputs/fedras_pdf_supplement`. Dry runs print commands without launching evaluation or checking input files.
 
-- [Paper ablation launcher](scripts/run_paper_ablations.sh)
-- [Revised experiment configurations and command generation](configs/revision_20261102/README.md)
+- [Supplementary experiment configurations and command design](configs/supplement_20261112/README.md)
 - [Additional supplementary experiments](supplement_experiments/README.md)
 
 Run the Tiny-ImageNet-C normalization comparison arm with the FedACG ResNet-18 checkpoint and its matching source statistics.

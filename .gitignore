@@ -4,7 +4,7 @@ __pycache__/
 .DS_Store
 train/results/
 outputs/
-test/outputs/
+tests/outputs/
 data/
 *.pt
 *.pth
