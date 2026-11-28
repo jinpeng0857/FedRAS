@@ -11,12 +11,12 @@ from torch import nn
 from sparse_restore import PeriodicSparseRestorer
 from adapters.base import (
     BASE_METHODS,
-    DLRS_METHODS,
+    RGA_METHODS,
     DUAL_RELIABILITY_METHODS,
     EATA_D_MARGIN,
     EATA_E_MARGIN_FACTOR,
     EATA_FISHER_ALPHA,
-    FSLR_GRAD_CLIP_NORM,
+    DSR_GRAD_CLIP_NORM,
     L0_FACTOR,
     MARGIN_QUALITY_THRESHOLD,
     RECAP_SOFT_WEIGHT_TEMPERATURE_FACTOR,
@@ -56,7 +56,7 @@ def recap_region_soft_weight(
 
 
 class DualReliabilityAdapter:
-    """Matched Tent, EATA, ReCAP, and FSLR comparison adapter."""
+    """Matched Tent, EATA, ReCAP, and DSR comparison adapter."""
 
     def __init__(
         self,
@@ -73,7 +73,7 @@ class DualReliabilityAdapter:
         recap_soft_weight_temperature_factor: float = (
             RECAP_SOFT_WEIGHT_TEMPERATURE_FACTOR
         ),
-        fslr_grad_clip_norm: float = FSLR_GRAD_CLIP_NORM,
+        dsr_grad_clip_norm: float = DSR_GRAD_CLIP_NORM,
         confidence_gate: str = "none",
         gate_margin_headroom: float = 0.10,
     ):
@@ -96,28 +96,28 @@ class DualReliabilityAdapter:
         self.use_base = self.tta_method in BASE_METHODS
         self.use_recap = (
             "recap" in self.tta_method
-            or self.tta_method in DLRS_METHODS
+            or self.tta_method in RGA_METHODS
             or self.use_base
         )
-        self.use_fslr = self.tta_method.endswith("_fslr")
+        self.use_dsr = self.tta_method.endswith("_dsr")
         requested_grad_clip_norm = (
             None
-            if fslr_grad_clip_norm is None
-            else float(fslr_grad_clip_norm)
+            if dsr_grad_clip_norm is None
+            else float(dsr_grad_clip_norm)
         )
-        if self.use_fslr and requested_grad_clip_norm is not None and (
+        if self.use_dsr and requested_grad_clip_norm is not None and (
             not math.isfinite(requested_grad_clip_norm)
             or requested_grad_clip_norm < 0
         ):
             raise ValueError(
-                "fslr_grad_clip_norm must be finite and non-negative"
+                "dsr_grad_clip_norm must be finite and non-negative"
             )
         # Zero explicitly disables clipping. Strict mechanism ablations use
-        # this so FSLR represents sparse restoration only.
-        self.fslr_grad_clip_norm = (
+        # this so DSR represents sparse restoration only.
+        self.dsr_grad_clip_norm = (
             requested_grad_clip_norm
             if (
-                self.use_fslr
+                self.use_dsr
                 and requested_grad_clip_norm is not None
                 and requested_grad_clip_norm > 0
             )
@@ -146,7 +146,7 @@ class DualReliabilityAdapter:
                 if self.tta_method == "tent" or self.tta_method in BASE_METHODS
                 else (
                     "soft_reliability_all_samples"
-                    if self.tta_method in DLRS_METHODS
+                    if self.tta_method in RGA_METHODS
                     else "margin"
                 )
             )
@@ -173,14 +173,14 @@ class DualReliabilityAdapter:
         self.use_margin_quality_gate = (
             self.use_recap
             and not self.use_eata
-            and self.tta_method not in DLRS_METHODS
+            and self.tta_method not in RGA_METHODS
             and self.tta_method not in BASE_METHODS
         )
         self.current_model_probs = None
         if (
             self.tta_method not in DUAL_RELIABILITY_METHODS
             and self.tta_method not in BASE_METHODS
-            and self.tta_method not in DLRS_METHODS
+            and self.tta_method not in RGA_METHODS
         ):
             raise ValueError(
                 "DualReliabilityAdapter only supports "
@@ -249,15 +249,15 @@ class DualReliabilityAdapter:
             "loss_sum": 0.0,
             "recap_loss_sum": 0.0,
             "eata_regularization_sum": 0.0,
-            "dlrs_batch_reliability_sum": 0.0,
-            "dlrs_batch_reliability_square_sum": 0.0,
-            "dlrs_batch_reliability_count": 0,
-            "dlrs_ess_sum": 0.0,
-            "dlrs_ess_square_sum": 0.0,
-            "dlrs_ess_ratio_sum": 0.0,
-            "dlrs_ess_count": 0,
-            "dlrs_dual_consistency_sum": 0.0,
-            "dlrs_dual_consistency_count": 0,
+            "rga_batch_reliability_sum": 0.0,
+            "rga_batch_reliability_square_sum": 0.0,
+            "rga_batch_reliability_count": 0,
+            "rga_ess_sum": 0.0,
+            "rga_ess_square_sum": 0.0,
+            "rga_ess_ratio_sum": 0.0,
+            "rga_ess_count": 0,
+            "rga_dual_consistency_sum": 0.0,
+            "rga_dual_consistency_count": 0,
         }
 
     @torch.no_grad()
@@ -414,10 +414,10 @@ class DualReliabilityAdapter:
             if torch.isfinite(loss):
                 loss_value = float(loss.detach().cpu())
                 loss.backward()
-                if self.fslr_grad_clip_norm is not None:
+                if self.dsr_grad_clip_norm is not None:
                     gradient_norm_tensor = torch.nn.utils.clip_grad_norm_(
                         self._trainable_parameters,
-                        max_norm=self.fslr_grad_clip_norm,
+                        max_norm=self.dsr_grad_clip_norm,
                         error_if_nonfinite=False,
                     )
                     gradient_norm_before_clip = float(
@@ -426,7 +426,7 @@ class DualReliabilityAdapter:
                     if math.isfinite(gradient_norm_before_clip):
                         gradient_clipped = (
                             gradient_norm_before_clip
-                            > self.fslr_grad_clip_norm
+                            > self.dsr_grad_clip_norm
                         )
                         self.optimizer.step()
                         updated = True

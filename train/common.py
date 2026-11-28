@@ -1,4 +1,4 @@
-"""Shared server utilities for the FedDR federated supplements."""
+"""Shared server utilities for the FedRAS federated supplements."""
 
 import copy
 

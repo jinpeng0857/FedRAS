@@ -113,8 +113,8 @@ def restoration_stats_for_output(args, restorer) -> Dict[str, Any]:
     """Return restoration diagnostics with appropriate gate metadata."""
     stats = dict(restorer.stats)
     if (
-        getattr(args, "tta_method", "").endswith("_fslr")
-        and getattr(args, "disable_fslr_reliability_gate", False)
+        getattr(args, "tta_method", "").endswith("_dsr")
+        and getattr(args, "disable_dsr_reliability_gate", False)
     ):
         stats["reliability_gate_disabled"] = True
     return stats

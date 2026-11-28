@@ -1,4 +1,4 @@
-"""FedAdam server update for the FedDR federated supplements."""
+"""FedAdam server update for the FedRAS federated supplements."""
 
 import copy
 

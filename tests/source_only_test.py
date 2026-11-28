@@ -353,7 +353,7 @@ def run():
         torch.cuda.manual_seed_all(args.seed)
 
     initial_clean = evaluate_initial_clean(args, device)
-    # Keep the result-table label aligned with the FedDR comparison roster.
+    # Keep the result-table label aligned with the FedRAS comparison roster.
     LOGGER.info("method: Source")
     LOGGER.info("checkpoint key: %s", args.anchor_key)
     LOGGER.info("model mode: eval (source BN statistics frozen)")

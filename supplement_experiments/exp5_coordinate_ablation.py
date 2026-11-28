@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Experiment 5: DSR/FSLR coordinate-selection ablation."""
+"""Experiment 5: DSR coordinate-selection ablation."""
 
 from __future__ import annotations
 
@@ -46,22 +46,22 @@ def selection_flags(args, criterion: str, seed: int | None) -> list[str]:
         "--restore_budget_mode", "fixed",
         "--sparse_ratio", "0.05",
         "--restore_strength", "0.5",
-        "--disable_fslr_event_trigger",
-        "--disable_fslr_continuous_risk",
-        "--disable_fslr_hierarchical_budget",
-        "--disable_fslr_reliability_gate",
-        "--fslr_selection_criterion", criterion,
-        "--dlrs_region_scale_min", "1.2",
-        "--dlrs_region_scale_max", "1.2",
-        "--dlrs_hybrid_threshold", "0.0",
-        "--dlrs_skip_update_tau_s", "0.0",
-        "--dlrs_skip_update_tau_ess", "0.0",
-        "--dlrs_normalize_by_weight",
-        "--dlrs_weight_mode", "product",
-        "--fslr_grad_clip_norm", "0.0",
+        "--disable_dsr_event_trigger",
+        "--disable_dsr_continuous_risk",
+        "--disable_dsr_hierarchical_budget",
+        "--disable_dsr_reliability_gate",
+        "--dsr_selection_criterion", criterion,
+        "--rga_region_scale_min", "1.2",
+        "--rga_region_scale_max", "1.2",
+        "--rga_hybrid_threshold", "0.0",
+        "--rga_skip_update_tau_s", "0.0",
+        "--rga_skip_update_tau_ess", "0.0",
+        "--rga_normalize_by_weight",
+        "--rga_weight_mode", "product",
+        "--dsr_grad_clip_norm", "0.0",
     ]
     if seed is not None:
-        flags.extend(["--fslr_selection_seed", str(seed)])
+        flags.extend(["--dsr_selection_seed", str(seed)])
     return flags
 
 
@@ -79,7 +79,7 @@ def main():
             tasks.append(build_main_task(
                 name=name, dataset="cifar100", federated_method="fedacg",
                 model_path=model_path, anchor_key="lookahead_anchor",
-                statistics_path=statistics_path, tta_method="dlrs_fslr",
+                statistics_path=statistics_path, tta_method="rga_dsr",
                 corruption_path=args.cifar_c_path, clean_root=args.clean_data_root,
                 device=args.device, batch_size=args.batch_size,
                 num_workers=args.num_workers, seed=args.seed,

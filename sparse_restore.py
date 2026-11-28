@@ -3,7 +3,7 @@
 Every ``interval`` test batches (or upon emergency sustained event triggers), the restorer
 measures the normalized global normalization affine drift from the deployment anchor.
 Parameters are ranked by normalized Fisher importance (or online-fused Fisher) times
-their current absolute drift. When DLRS supplies batch reliability, entropy, and anchor
+their current absolute drift. When RGA supplies batch reliability, entropy, and anchor
 disagreement, the restorer tracks the joint condition:
     E_t = [r_bar_t < tau_r or A_t > tau_A] and [z(H_t) < -tau_H] and [D_t > tau_D]
 sustained over K consecutive batches to detect genuine semantic collapse / overconfident errors,
@@ -454,7 +454,7 @@ class PeriodicSparseRestorer:
     def _select_fisher_drift_indices(
         self, ratio: float, absolute_drift: torch.Tensor
     ) -> torch.Tensor:
-        """Rank current candidates by the selected FSLR ablation criterion."""
+        """Rank current candidates by the selected DSR ablation criterion."""
         count = self._count_for_ratio(ratio)
         if count == 0:
             self.last_positive_score_elements = 0

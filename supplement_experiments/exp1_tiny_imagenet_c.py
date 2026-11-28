@@ -37,13 +37,13 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     out_dir = ROOT / args.output_dir
     task = build_main_task(
-        name="tiny_imagenet_resnet18_feddr",
+        name="tiny_imagenet_resnet18_fedras",
         dataset=args.dataset,
         federated_method="fedacg",
         model_path=rooted(args.model_path),
         anchor_key="lookahead_anchor",
         statistics_path=rooted(args.statistics_path),
-        tta_method="feddr",
+        tta_method="fedras",
         corruption_path=args.cifar_c_path,
         clean_root=args.clean_data_root,
         device=args.device,
@@ -51,8 +51,8 @@ def main():
         num_workers=args.num_workers,
         seed=args.seed,
         max_batches=args.max_batches,
-        output=out_dir / "tiny_imagenet_resnet18_feddr.json",
-        log=out_dir / "logs/tiny_imagenet_resnet18_feddr.log",
+        output=out_dir / "tiny_imagenet_resnet18_fedras.json",
+        log=out_dir / "logs/tiny_imagenet_resnet18_fedras.log",
         metadata={
             "dataset": "tiny-imagenet",
             "backbone": "resnet18",
@@ -69,7 +69,7 @@ def main():
                          force_rerun=args.force_rerun,
                          allow_missing=args.allow_missing or args.dry_run)
     summarize_tasks([task], output=out_dir / "metrics.json",
-                    aliases={task.name: "Tiny-ImageNet-C / ResNet18 / FedDR"})
+                    aliases={task.name: "Tiny-ImageNet-C / ResNet18 / FedRAS"})
     raise_on_failures(failures)
 
 

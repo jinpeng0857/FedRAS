@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Tuple
 import torch
 from torch.utils.data import DataLoader
 
-from adapters.base import DLRS_METHODS
+from adapters.base import RGA_METHODS
 from evaluator.dataset import (
     PROJECT_ROOT,
     REVISIT_CORRUPTIONS,
@@ -440,11 +440,11 @@ def evaluate_corruption(
                 )
             )
         ),
-        "fslr_gradient_clip_enabled": bool(
-            getattr(adapter, "fslr_grad_clip_norm", None) is not None
+        "dsr_gradient_clip_enabled": bool(
+            getattr(adapter, "dsr_grad_clip_norm", None) is not None
         ),
-        "fslr_gradient_clip_norm": getattr(
-            adapter, "fslr_grad_clip_norm", None
+        "dsr_gradient_clip_norm": getattr(
+            adapter, "dsr_grad_clip_norm", None
         ),
         "mean_gradient_norm_before_clip": (
             None
@@ -606,7 +606,7 @@ def evaluate_corruption(
     }
     if rga_reliability is not None:
         result["rga_reliability"] = rga_reliability
-    if getattr(adapter, "tta_method", None) in DLRS_METHODS:
+    if getattr(adapter, "tta_method", None) in RGA_METHODS:
         batches_delta = max(1, int(_counter_delta(after, before, "batches")))
         ess_batches = max(1, int(_counter_delta(after, before, "effective_sample_size_batches")))
         mean_ess = float(_counter_delta(after, before, "effective_sample_size_sum") / ess_batches)
@@ -623,84 +623,84 @@ def evaluate_corruption(
 
         result.update(
             {
-                "dlrs_entropy_reference_ratio": float(
+                "rga_entropy_reference_ratio": float(
                     _counter_delta(
                         after, before, "deyo_entropy_passed"
                     )
                     / max(1, samples)
                 ),
-                "dlrs_plpd_reference_ratio": float(
+                "rga_plpd_reference_ratio": float(
                     _counter_delta(after, before, "plpd_passed")
                     / max(1, samples)
                 ),
-                "dlrs_sample_selection": (
+                "rga_sample_selection": (
                     f"hybrid_soft_hard_tau{float(getattr(adapter, 'hybrid_threshold', 0.0)):g}"
                     if getattr(adapter, "hybrid_threshold", None) is not None
                     and float(getattr(adapter, "hybrid_threshold", 0.0) or 0.0) > 0.0
                     else "soft_all_samples"
                 ),
-                "dlrs_hybrid_threshold": getattr(adapter, "hybrid_threshold", None),
-                "dlrs_normalize_by_weight": bool(
+                "rga_hybrid_threshold": getattr(adapter, "hybrid_threshold", None),
+                "rga_normalize_by_weight": bool(
                     getattr(adapter, "normalize_by_weight", False)
                 ),
-                "dlrs_weight_mode": getattr(adapter, "weight_mode", "product"),
-                "dlrs_mean_sample_reliability": float(
+                "rga_weight_mode": getattr(adapter, "weight_mode", "product"),
+                "rga_mean_sample_reliability": float(
                     _counter_delta(
-                        after, before, "dlrs_reliability_sum"
+                        after, before, "rga_reliability_sum"
                     )
                     / max(
                         1,
                         _counter_delta(
-                            after, before, "dlrs_reliability_count"
+                            after, before, "rga_reliability_count"
                         ),
                     )
                 ),
-                "dlrs_mean_region_scale": float(
+                "rga_mean_region_scale": float(
                     _counter_delta(
-                        after, before, "dlrs_region_scale_sum"
+                        after, before, "rga_region_scale_sum"
                     )
                     / max(
                         1,
                         _counter_delta(
-                            after, before, "dlrs_reliability_count"
+                            after, before, "rga_reliability_count"
                         ),
                     )
                 ),
-                "dlrs_mean_joint_weight": float(
-                    _counter_delta(after, before, "dlrs_joint_weight_sum")
+                "rga_mean_joint_weight": float(
+                    _counter_delta(after, before, "rga_joint_weight_sum")
                     / max(
                         1,
                         _counter_delta(
                             after,
                             before,
-                            "dlrs_joint_weight_count",
+                            "rga_joint_weight_count",
                         ),
                     )
                 ),
-                "dlrs_rms_joint_weight": float(
+                "rga_rms_joint_weight": float(
                     math.sqrt(
                         _counter_delta(
                             after,
                             before,
-                            "dlrs_joint_weight_square_sum",
+                            "rga_joint_weight_square_sum",
                         )
                         / max(
                             1,
                             _counter_delta(
                                 after,
                                 before,
-                                "dlrs_joint_weight_count",
+                                "rga_joint_weight_count",
                             ),
                         )
                     )
                 ),
-                "dlrs_mean_effective_sample_size": mean_ess,
-                "dlrs_mean_ess_ratio": float(mean_ess / max(1.0, float(samples) / max(1, batches_delta))),
-                "dlrs_skipped_low_quality_batches": skipped_low_quality,
-                "dlrs_skip_update_ratio": float(skipped_low_quality / batches_delta),
-                "dlrs_mean_anchor_disagreement": mean_anchor_disagree,
-                "dlrs_mean_recovery_credit": mean_rec_credit,
-                "fslr_num_event_triggers": event_triggers,
+                "rga_mean_effective_sample_size": mean_ess,
+                "rga_mean_ess_ratio": float(mean_ess / max(1.0, float(samples) / max(1, batches_delta))),
+                "rga_skipped_low_quality_batches": skipped_low_quality,
+                "rga_skip_update_ratio": float(skipped_low_quality / batches_delta),
+                "rga_mean_anchor_disagreement": mean_anchor_disagree,
+                "rga_mean_recovery_credit": mean_rec_credit,
+                "dsr_num_event_triggers": event_triggers,
             }
         )
     if cycle is not None:

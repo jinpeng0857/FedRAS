@@ -26,7 +26,7 @@ try:
         add_runtime_args,
         build_main_task,
         official_protocol_flags,
-        OFFICIAL_FEDDR_BATCH_SIZE,
+        OFFICIAL_FEDRAS_BATCH_SIZE,
         preflight,
         raise_on_failures,
         rooted,
@@ -40,7 +40,7 @@ except ImportError:
         add_runtime_args,
         build_main_task,
         official_protocol_flags,
-        OFFICIAL_FEDDR_BATCH_SIZE,
+        OFFICIAL_FEDRAS_BATCH_SIZE,
         preflight,
         raise_on_failures,
         rooted,
@@ -77,7 +77,7 @@ def parse_args():
         corruption_default="data/CIFAR-100-C",
         clean_default="data",
     )
-    add_runtime_args(parser, batch_size=OFFICIAL_FEDDR_BATCH_SIZE)
+    add_runtime_args(parser, batch_size=OFFICIAL_FEDRAS_BATCH_SIZE)
     return parser.parse_args()
 
 
@@ -85,10 +85,10 @@ def rga_flags(args, weight_mode: str, sample_mode: str) -> list[str]:
     """Use the official main protocol and vary only the RGA weight variant."""
     return official_protocol_flags(args) + [
         "--tta_method",
-        "dlrs",
-        "--dlrs_weight_mode",
+        "rga",
+        "--rga_weight_mode",
         weight_mode,
-        "--dlrs_sample_reliability_mode",
+        "--rga_sample_reliability_mode",
         sample_mode,
     ]
 
@@ -109,11 +109,11 @@ def main():
                 model_path=model_path,
                 anchor_key="lookahead_anchor",
                 statistics_path=statistics_path,
-                tta_method="dlrs",
+                tta_method="rga",
                 corruption_path=args.cifar_c_path,
                 clean_root=args.clean_data_root,
                 device=args.device,
-                batch_size=OFFICIAL_FEDDR_BATCH_SIZE,
+                batch_size=OFFICIAL_FEDRAS_BATCH_SIZE,
                 num_workers=args.num_workers,
                 seed=args.seed,
                 max_batches=args.max_batches,

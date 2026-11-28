@@ -1,4 +1,4 @@
-"""SCAFFOLD Option-II control variates for the FedDR supplements."""
+"""SCAFFOLD Option-II control variates for the FedRAS supplements."""
 
 import copy
 

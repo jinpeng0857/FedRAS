@@ -1,2 +1,2 @@
-"""Supplementary federated optimizers used by the FedDR experiment matrix."""
+"""Supplementary federated optimizers used by the FedRAS experiment matrix."""
 

@@ -8,16 +8,16 @@
 
 | 文件 | 实验 | 入口/协议 | 主要输出 |
 |---|---|---|---|
-| `exp1_tiny_imagenet_c.py` | Tiny-ImageNet-C，ResNet18 | FedACG + FedDR，15 域、3 cycle | Domain、C1/C3、Δ、Revisit、Clean |
-| `exp2_resnet34_cifar100c.py` | CIFAR-100-C，ResNet34 | FedACG + FedDR，15 域、3 cycle | Domain、C1/C3、Δ、Revisit、Clean |
-| `exp3_fl_initialization.py` | FL 初始化 | FedACG/FedAvg（可选 FedProx）× Source/ASR/ReCAP/FedDR | 每个初始化和方法一行 |
+| `exp1_tiny_imagenet_c.py` | Tiny-ImageNet-C，ResNet18 | FedACG + FedRAS，15 域、3 cycle | Domain、C1/C3、Δ、Revisit、Clean |
+| `exp2_resnet34_cifar100c.py` | CIFAR-100-C，ResNet34 | FedACG + FedRAS，15 域、3 cycle | Domain、C1/C3、Δ、Revisit、Clean |
+| `exp3_fl_initialization.py` | FL 初始化 | FedACG/FedAvg（可选 FedProx）× Source/ASR/ReCAP/FedRAS | 每个初始化和方法一行 |
 | `exp4_component_ablation.py` | RGA/DSR 组件 | Base、Base+RGA、Base+DSR、Full FedRAS | Domain、C1/C3、Δ、Revisit、Clean |
 | `exp5_coordinate_ablation.py` | DSR 坐标选择 | Random、Drift-only、Fisher-only、Fisher×Drift | 同上；Random 默认 seed 0/1/2 |
 | `exp6_continual_curve.py` | 45-block continual | CIFAR-100-C，15 corruption × 3 cycle | `continual_45_block.csv/json`，可选 PNG |
 
-仓库代码的规范方法名是 **FedDR = DLRS + FSLR**。表格中的 “FedRAS” 在脚本中
-作为论文显示别名输出为 `FedRAS (FedDR)`，底层仍传给 `main_test.py --tta_method feddr`。
-同理，用户表中的 RGA/DSR 分别对应当前实现的 DLRS/FSLR；映射记录在实验 4 的
+仓库代码的规范方法名是 **FedRAS = RGA + DSR**。表格中的 “FedRAS” 在脚本中
+作为论文显示别名输出为 `FedRAS (FedRAS)`，底层仍传给 `main_test.py --tta_method fedras`。
+同理，用户表中的 RGA/DSR 分别对应当前实现的 RGA/DSR；映射记录在实验 4 的
 脚本和汇总标签中。
 
 ## 运行约定

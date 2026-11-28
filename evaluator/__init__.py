@@ -19,7 +19,7 @@ from evaluator.corruption_runner import (
 from evaluator.engine import (
     build_main_adapter,
     configure_bn_adaptation,
-    configure_feddr_bn_adaptation,
+    configure_fedras_bn_adaptation,
     configure_official_bn_adaptation,
     load_deployment_model,
     load_feature_statistics,
@@ -46,7 +46,7 @@ __all__ = [
     "evaluate_post_stream",
     "build_main_adapter",
     "configure_bn_adaptation",
-    "configure_feddr_bn_adaptation",
+    "configure_fedras_bn_adaptation",
     "configure_official_bn_adaptation",
     "load_deployment_model",
     "load_feature_statistics",

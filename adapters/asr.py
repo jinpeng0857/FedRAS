@@ -15,7 +15,7 @@ from adapters.base import (
     ASR_OFFICIAL_P0,
     ASR_OFFICIAL_R0,
     ASR_OFFICIAL_R1,
-    FSLR_GRAD_CLIP_NORM,
+    DSR_GRAD_CLIP_NORM,
 )
 from adapters.dual_reliability import (
     DualReliabilityAdapter,
@@ -26,7 +26,7 @@ from adapters.dual_reliability import (
 class ASRAdapter(DualReliabilityAdapter):
     """Official ASR reset controller paired with the ETA entropy objective.
 
-    ASR does not use FedDR's sample/region reliability weights or FSLR. The
+    ASR does not use FedRAS's sample/region reliability weights or DSR. The
     adapter keeps the matched FEDEATA pre-update prediction rule, while the
     reset state follows YonseiML/asr: an entropy decrease relative to the
     exponential moving threshold triggers a partial restore to the deployment
@@ -56,7 +56,7 @@ class ASRAdapter(DualReliabilityAdapter):
             restorer=restorer,
             fishers=fishers,
             tta_method="asr",
-            fslr_grad_clip_norm=FSLR_GRAD_CLIP_NORM,
+            dsr_grad_clip_norm=DSR_GRAD_CLIP_NORM,
         )
         self.sample_filter = "asr_entropy"
         self.asr_m0 = float(m0)

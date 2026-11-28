@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Run Paper Ablation Experiments for FedDR.
+"""Run Paper Ablation Experiments for FedRAS.
 
 Implements the three core ablation blocks defined for the main paper:
-  - Block A: Core Module Decomposition (Base, DLRS-only, FSLR-only, FedDR-Core, FedDR-Full)
-  - Block B: DLRS Joint Weighting Ablation (Uniform, Sample-only, Region-only, Product)
-  - Block C: FSLR Coordinate Selection Ablation (Random, Drift-only, Fisher-only, Fisher*Drift)
+  - Block A: Core Module Decomposition (Base, RGA-only, DSR-only, FedRAS-Core, FedRAS-Full)
+  - Block B: RGA Joint Weighting Ablation (Uniform, Sample-only, Region-only, Product)
+  - Block C: DSR Coordinate Selection Ablation (Random, Drift-only, Fisher-only, Fisher*Drift)
 
 Evaluates on CIFAR-100-C (severity 5) across multiple FedACG checkpoints.
 """
@@ -50,7 +50,7 @@ DEFAULT_RUNS = [
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Run FedDR Paper Ablation Suite (Blocks A, B, C)"
+        description="Run FedRAS Paper Ablation Suite (Blocks A, B, C)"
     )
     parser.add_argument(
         "--blocks",
@@ -155,11 +155,11 @@ def validate_existing_result(output_path: Path, expected_spec: Dict[str, Any]) -
         expected_tta = expected_spec.get("tta_method")
         actual_tta = data.get("adaptation", {}).get("tta_method")
         if expected_tta and actual_tta:
-            # Normalize tta_method names (e.g. feddr -> dlrs_fslr)
-            if expected_tta == "feddr" and actual_tta != "dlrs_fslr" and actual_tta != "feddr":
+            # Normalize tta_method names (e.g. fedras -> rga_dsr)
+            if expected_tta == "fedras" and actual_tta != "rga_dsr" and actual_tta != "fedras":
                 LOGGER.warning("Existing JSON tta_method mismatch: %s != %s in %s", actual_tta, expected_tta, output_path)
                 return False
-            elif expected_tta != "feddr" and actual_tta != expected_tta:
+            elif expected_tta != "fedras" and actual_tta != expected_tta:
                 LOGGER.warning("Existing JSON tta_method mismatch: %s != %s in %s", actual_tta, expected_tta, output_path)
                 return False
 
@@ -233,73 +233,73 @@ def build_block_a_experiments(
     block_dir: Path,
     log_dir: Path,
 ) -> List[Dict[str, Any]]:
-    """Block A: Core Module Decomposition (Base, DLRS-only, FSLR-only, FedDR-Core, FedDR-Full).
+    """Block A: Core Module Decomposition (Base, RGA-only, DSR-only, FedRAS-Core, FedRAS-Full).
 
     Parameter Scope: All 5 rows uniformly use the final non-layer4 BatchNorm affine parameters.
-    First 4 rows: Standardized Factorial Decomposition (fslr_grad_clip_norm=0.0, drift_tiered FSLR, no continuous risk).
+    First 4 rows: Standardized Factorial Decomposition (dsr_grad_clip_norm=0.0, drift_tiered DSR, no continuous risk).
     5th row: Full Method (Continuous risk, hierarchical layer quotas, grad clip 15.0).
     """
     tasks = []
     run_name = run_info["name"]
 
     # Common standard controls for first 4 factorial rows:
-    # Disable gradient clipping (0.0), fixed drift-tiered FSLR, no reliability gate, no event trigger,
+    # Disable gradient clipping (0.0), fixed drift-tiered DSR, no reliability gate, no event trigger,
     # uniform non-layer4 BN parameter scope (no strict_mechanism_ablation flag).
-    std_fslr_flags = [
-        "--fslr_grad_clip_norm", "0.0",
+    std_dsr_flags = [
+        "--dsr_grad_clip_norm", "0.0",
         "--recovery_interval", "10",
         "--restore_strength", "0.7",
         "--restore_budget_mode", "drift_tiered",
         "--restore_drift_thresholds", "0.10", "0.20", "0.35",
         "--restore_drift_ratios", "0.0", "0.02", "0.05", "0.10",
-        "--disable_fslr_reliability_gate",
-        "--disable_fslr_event_trigger",
-        "--fslr_selection_criterion", "fisher_drift",
+        "--disable_dsr_reliability_gate",
+        "--disable_dsr_event_trigger",
+        "--dsr_selection_criterion", "fisher_drift",
     ]
 
     # 1. Base (Unweighted regional adaptation baseline)
     tasks.append({
         "name": f"block_a_base_{run_name}",
-        "args": base_args + ["--tta_method", "base"] + std_fslr_flags,
+        "args": base_args + ["--tta_method", "base"] + std_dsr_flags,
         "output": block_dir / f"block_a_base_{run_name}.json",
         "log": log_dir / f"block_a_base_{run_name}.log",
         "spec": {"tta_method": "base"},
     })
 
-    # 2. DLRS-only (Batch adaptation without FSLR)
+    # 2. RGA-only (Batch adaptation without DSR)
     tasks.append({
-        "name": f"block_a_dlrs_only_{run_name}",
-        "args": base_args + ["--tta_method", "dlrs"] + std_fslr_flags,
-        "output": block_dir / f"block_a_dlrs_only_{run_name}.json",
-        "log": log_dir / f"block_a_dlrs_only_{run_name}.log",
-        "spec": {"tta_method": "dlrs"},
+        "name": f"block_a_rga_only_{run_name}",
+        "args": base_args + ["--tta_method", "rga"] + std_dsr_flags,
+        "output": block_dir / f"block_a_rga_only_{run_name}.json",
+        "log": log_dir / f"block_a_rga_only_{run_name}.log",
+        "spec": {"tta_method": "rga"},
     })
 
-    # 3. FSLR-only (Periodic restoration on Base without DLRS weighting)
+    # 3. DSR-only (Periodic restoration on Base without RGA weighting)
     tasks.append({
-        "name": f"block_a_fslr_only_{run_name}",
-        "args": base_args + ["--tta_method", "base_fslr"] + std_fslr_flags,
-        "output": block_dir / f"block_a_fslr_only_{run_name}.json",
-        "log": log_dir / f"block_a_fslr_only_{run_name}.log",
-        "spec": {"tta_method": "base_fslr"},
+        "name": f"block_a_dsr_only_{run_name}",
+        "args": base_args + ["--tta_method", "base_dsr"] + std_dsr_flags,
+        "output": block_dir / f"block_a_dsr_only_{run_name}.json",
+        "log": log_dir / f"block_a_dsr_only_{run_name}.log",
+        "spec": {"tta_method": "base_dsr"},
     })
 
-    # 4. FedDR-Core (DLRS + Standard Drift-Tiered FSLR)
+    # 4. FedRAS-Core (RGA + Standard Drift-Tiered DSR)
     tasks.append({
-        "name": f"block_a_feddr_core_{run_name}",
-        "args": base_args + ["--tta_method", "dlrs_fslr"] + std_fslr_flags,
-        "output": block_dir / f"block_a_feddr_core_{run_name}.json",
-        "log": log_dir / f"block_a_feddr_core_{run_name}.log",
-        "spec": {"tta_method": "dlrs_fslr"},
+        "name": f"block_a_fedras_core_{run_name}",
+        "args": base_args + ["--tta_method", "rga_dsr"] + std_dsr_flags,
+        "output": block_dir / f"block_a_fedras_core_{run_name}.json",
+        "log": log_dir / f"block_a_fedras_core_{run_name}.log",
+        "spec": {"tta_method": "rga_dsr"},
     })
 
-    # 5. FedDR-Full (Primary Final Configuration: Continuous Risk + Hierarchical Budget)
+    # 5. FedRAS-Full (Primary Final Configuration: Continuous Risk + Hierarchical Budget)
     tasks.append({
-        "name": f"block_a_feddr_full_{run_name}",
-        "args": base_args + ["--tta_method", "feddr"],
-        "output": block_dir / f"block_a_feddr_full_{run_name}.json",
-        "log": log_dir / f"block_a_feddr_full_{run_name}.log",
-        "spec": {"tta_method": "feddr"},
+        "name": f"block_a_fedras_full_{run_name}",
+        "args": base_args + ["--tta_method", "fedras"],
+        "output": block_dir / f"block_a_fedras_full_{run_name}.json",
+        "log": log_dir / f"block_a_fedras_full_{run_name}.log",
+        "spec": {"tta_method": "fedras"},
     })
 
     return tasks
@@ -311,12 +311,12 @@ def build_block_b_experiments(
     block_dir: Path,
     log_dir: Path,
 ) -> List[Dict[str, Any]]:
-    """Block B: DLRS Joint Weighting Ablation (Uniform, Sample-only, Region-only, Product).
+    """Block B: RGA Joint Weighting Ablation (Uniform, Sample-only, Region-only, Product).
 
     Critical control:
       - Fixed search radius eta_min = eta_max = 1.2;
       - Pure weighting comparison without sample filtering:
-        dlrs_hybrid_threshold = 0.0, skip_update_tau_s = 0.0, skip_update_tau_ess = 0.0.
+        rga_hybrid_threshold = 0.0, skip_update_tau_s = 0.0, skip_update_tau_ess = 0.0.
       - Bounded batch normalization enabled (c_max = 2.0).
     """
     tasks = []
@@ -331,32 +331,32 @@ def build_block_b_experiments(
 
     for label, mode in weighting_modes:
         cmd_flags = base_args + [
-            "--tta_method", "dlrs_fslr",
-            "--dlrs_weight_mode", mode,
-            "--dlrs_region_scale_min", "1.2",
-            "--dlrs_region_scale_max", "1.2",
-            "--dlrs_hybrid_threshold", "0.0",
-            "--dlrs_skip_update_tau_s", "0.0",
-            "--dlrs_skip_update_tau_ess", "0.0",
-            "--dlrs_normalize_by_weight",
-            "--dlrs_c_max", "2.0",
-            "--dlrs_anchor_rectify_beta", "0.3",
-            "--dlrs_view_consistency",
-            "--dlrs_view_alpha", "0.8",
-            "--dlrs_view_js_scale", "1.0",
+            "--tta_method", "rga_dsr",
+            "--rga_weight_mode", mode,
+            "--rga_region_scale_min", "1.2",
+            "--rga_region_scale_max", "1.2",
+            "--rga_hybrid_threshold", "0.0",
+            "--rga_skip_update_tau_s", "0.0",
+            "--rga_skip_update_tau_ess", "0.0",
+            "--rga_normalize_by_weight",
+            "--rga_c_max", "2.0",
+            "--rga_anchor_rectify_beta", "0.3",
+            "--rga_view_consistency",
+            "--rga_view_alpha", "0.8",
+            "--rga_view_js_scale", "1.0",
             "--recovery_interval", "10",
             "--restore_strength", "0.7",
             "--restore_budget_mode", "drift_tiered",
-            "--disable_fslr_reliability_gate",
-            "--disable_fslr_event_trigger",
-            "--fslr_grad_clip_norm", "0.0",
+            "--disable_dsr_reliability_gate",
+            "--disable_dsr_event_trigger",
+            "--dsr_grad_clip_norm", "0.0",
         ]
         tasks.append({
             "name": f"block_b_weight_{label}_{run_name}",
             "args": cmd_flags,
             "output": block_dir / f"block_b_weight_{label}_{run_name}.json",
             "log": log_dir / f"block_b_weight_{label}_{run_name}.log",
-            "spec": {"tta_method": "dlrs_fslr"},
+            "spec": {"tta_method": "rga_dsr"},
         })
 
     return tasks
@@ -369,7 +369,7 @@ def build_block_c_experiments(
     log_dir: Path,
     random_seeds: List[int],
 ) -> List[Dict[str, Any]]:
-    """Block C: FSLR Coordinate Selection Ablation (Random, Drift-only, Fisher-only, Fisher*Drift).
+    """Block C: DSR Coordinate Selection Ablation (Random, Drift-only, Fisher-only, Fisher*Drift).
 
     Common fair control:
       - Fixed ratio 5% (restore_budget_mode fixed, sparse_ratio 0.05);
@@ -381,16 +381,16 @@ def build_block_c_experiments(
     run_name = run_info["name"]
 
     common_c_flags = [
-        "--tta_method", "dlrs_fslr",
+        "--tta_method", "rga_dsr",
         "--restore_budget_mode", "fixed",
         "--sparse_ratio", "0.05",
         "--restore_strength", "0.7",
         "--recovery_interval", "10",
-        "--disable_fslr_reliability_gate",
-        "--disable_fslr_event_trigger",
-        "--disable_fslr_continuous_risk",
-        "--disable_fslr_hierarchical_budget",
-        "--fslr_grad_clip_norm", "0.0",
+        "--disable_dsr_reliability_gate",
+        "--disable_dsr_event_trigger",
+        "--disable_dsr_continuous_risk",
+        "--disable_dsr_hierarchical_budget",
+        "--dsr_grad_clip_norm", "0.0",
     ]
 
     # 1. Deterministic Selection Modes
@@ -402,10 +402,10 @@ def build_block_c_experiments(
     for label, criterion in deterministic_modes:
         tasks.append({
             "name": f"block_c_select_{label}_{run_name}",
-            "args": base_args + common_c_flags + ["--fslr_selection_criterion", criterion],
+            "args": base_args + common_c_flags + ["--dsr_selection_criterion", criterion],
             "output": block_dir / f"block_c_select_{label}_{run_name}.json",
             "log": log_dir / f"block_c_select_{label}_{run_name}.log",
-            "spec": {"tta_method": "dlrs_fslr", "selection_criterion": criterion},
+            "spec": {"tta_method": "rga_dsr", "selection_criterion": criterion},
         })
 
     # 2. Random Selection with Multi-Seed Replications
@@ -413,12 +413,12 @@ def build_block_c_experiments(
         tasks.append({
             "name": f"block_c_select_random_s{seed}_{run_name}",
             "args": base_args + common_c_flags + [
-                "--fslr_selection_criterion", "random",
-                "--fslr_selection_seed", str(seed),
+                "--dsr_selection_criterion", "random",
+                "--dsr_selection_seed", str(seed),
             ],
             "output": block_dir / f"block_c_select_random_s{seed}_{run_name}.json",
             "log": log_dir / f"block_c_select_random_s{seed}_{run_name}.log",
-            "spec": {"tta_method": "dlrs_fslr", "selection_criterion": "random"},
+            "spec": {"tta_method": "rga_dsr", "selection_criterion": "random"},
         })
 
     return tasks

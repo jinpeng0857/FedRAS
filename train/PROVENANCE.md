@@ -1,6 +1,6 @@
 # Federated supplement provenance
 
-The FedDR supplement roster is implemented as a thin adapter around the
+The FedRAS supplement roster is implemented as a thin adapter around the
 existing FEDEATA data split, model, checkpoint, and logging interfaces:
 
 - FedAvg: standard sample-count-weighted aggregation;
@@ -10,6 +10,6 @@ existing FEDEATA data split, model, checkpoint, and logging interfaces:
 - FedAdam: adaptive server moments over aggregated client deltas.
 
 These algorithms only produce federated initialization checkpoints. They do
-not replace the primary FedDR TTA adapter, which remains
-`FedACG + DLRS + FSLR` in `main_test.py`.
+not replace the primary FedRAS TTA adapter, which remains
+`FedACG + RGA + DSR` in `main_test.py`.
 

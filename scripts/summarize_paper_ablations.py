@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize and Format FedDR Paper Ablation Results.
+"""Summarize and Format FedRAS Paper Ablation Results.
 
 Parses JSON outputs produced by `run_paper_ablations.py`, aggregates results
 across FedACG checkpoints (mean +- sample SD), and generates:
@@ -23,7 +23,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Summarize FedDR Paper Ablation Results (Blocks A, B, C)"
+        description="Summarize FedRAS Paper Ablation Results (Blocks A, B, C)"
     )
     parser.add_argument(
         "--output_dir",
@@ -164,15 +164,15 @@ def summarize_block_a(
     block_dir = output_root / "block_a_core"
     variants = [
         ("Base", "block_a_base", "✗", "✗"),
-        ("DLRS-only", "block_a_dlrs_only", "✓", "✗"),
-        ("FSLR-only", "block_a_fslr_only", "✗", "✓"),
-        ("FedDR-Core", "block_a_feddr_core", "✓", "✓"),
-        ("FedDR-Full", "block_a_feddr_full", "✓", "✓"),
+        ("RGA-only", "block_a_rga_only", "✓", "✗"),
+        ("DSR-only", "block_a_dsr_only", "✗", "✓"),
+        ("FedRAS-Core", "block_a_fedras_core", "✓", "✓"),
+        ("FedRAS-Full", "block_a_fedras_full", "✓", "✓"),
     ]
 
     md_lines = [
         "### Block A: Core Module Decomposition",
-        "| Method | DLRS | FSLR | Domain (%) | Cycle 1 (%) | Cycle 3 (%) | Δ C3-C1 (p.p.) | Revisit (%) | Clean (%) |",
+        "| Method | RGA | DSR | Domain (%) | Cycle 1 (%) | Cycle 3 (%) | Δ C3-C1 (p.p.) | Revisit (%) | Clean (%) |",
         "|---|:---:|:---:|---:|---:|---:|---:|---:|---:|",
     ]
 
@@ -182,7 +182,7 @@ def summarize_block_a(
 
     is_complete = True
 
-    for label, prefix, dlrs_mark, fslr_mark in variants:
+    for label, prefix, rga_mark, dsr_mark in variants:
         domain_list, c1_list, c3_list, delta_list, rev_list, clean_list = [], [], [], [], [], []
         for r in runs:
             f_path = block_dir / f"{prefix}_{r}.json"
@@ -213,12 +213,12 @@ def summarize_block_a(
         cln_s_tex = format_mean_std(clean_list)
 
         md_lines.append(
-            f"| {label} | {dlrs_mark} | {fslr_mark} | {dom_s_md} | {c1_s_md} | {c3_s_md} | {del_s_md} | {rev_s_md} | {cln_s_md} |"
+            f"| {label} | {rga_mark} | {dsr_mark} | {dom_s_md} | {c1_s_md} | {c3_s_md} | {del_s_md} | {rev_s_md} | {cln_s_md} |"
         )
 
         name_tex = f"\\textbf{{{label}}}" if "Full" in label else label
-        d_tex = r"\checkmark" if dlrs_mark == "✓" else ""
-        f_tex = r"\checkmark" if fslr_mark == "✓" else ""
+        d_tex = r"\checkmark" if rga_mark == "✓" else ""
+        f_tex = r"\checkmark" if dsr_mark == "✓" else ""
         latex_lines.append(
             f"{name_tex} & {d_tex} & {f_tex} & {dom_s_tex} & {c1_s_tex} & {c3_s_tex} & {del_s_tex} & {rev_s_tex} & {cln_s_tex} \\\\"
         )
@@ -229,7 +229,7 @@ def summarize_block_a(
 def summarize_block_b(
     output_root: Path, runs: List[str], missing_files: List[str]
 ) -> Tuple[str, str, bool]:
-    """Summarize Block B: DLRS Joint Weighting Ablation."""
+    """Summarize Block B: RGA Joint Weighting Ablation."""
     block_dir = output_root / "block_b_weighting"
     variants = [
         ("Uniform", "block_b_weight_uniform"),
@@ -239,13 +239,13 @@ def summarize_block_b(
     ]
 
     md_lines = [
-        "### Block B: DLRS Joint Weighting Ablation (Fixed Radius η=1.2)",
-        "| DLRS weighting | Domain (%) | Cycle 1 (%) | Cycle 3 (%) | Δ C3-C1 (p.p.) | Revisit (%) | Clean (%) |",
+        "### Block B: RGA Joint Weighting Ablation (Fixed Radius η=1.2)",
+        "| RGA weighting | Domain (%) | Cycle 1 (%) | Cycle 3 (%) | Δ C3-C1 (p.p.) | Revisit (%) | Clean (%) |",
         "|---|---:|---:|---:|---:|---:|---:|",
     ]
 
     latex_lines = [
-        r"\multicolumn{9}{l}{\textit{(B) DLRS Joint Weighting Formulation (Fixed Search Radius $\eta=1.2$)}} \\",
+        r"\multicolumn{9}{l}{\textit{(B) RGA Joint Weighting Formulation (Fixed Search Radius $\eta=1.2$)}} \\",
     ]
 
     is_complete = True
@@ -298,7 +298,7 @@ def summarize_block_c(
     random_seeds: List[int],
     missing_files: List[str],
 ) -> Tuple[str, str, bool]:
-    """Summarize Block C: FSLR Coordinate Selection Ablation."""
+    """Summarize Block C: DSR Coordinate Selection Ablation."""
     block_dir = output_root / "block_c_selection"
     variants = [
         ("Random", "random"),
@@ -308,13 +308,13 @@ def summarize_block_c(
     ]
 
     md_lines = [
-        "### Block C: FSLR Coordinate Selection Ablation (Fixed Budget 5%)",
-        "| FSLR selection | Domain (%) | Cycle 1 (%) | Cycle 3 (%) | Δ C3-C1 (p.p.) | Revisit (%) | Clean (%) |",
+        "### Block C: DSR Coordinate Selection Ablation (Fixed Budget 5%)",
+        "| DSR selection | Domain (%) | Cycle 1 (%) | Cycle 3 (%) | Δ C3-C1 (p.p.) | Revisit (%) | Clean (%) |",
         "|---|---:|---:|---:|---:|---:|---:|",
     ]
 
     latex_lines = [
-        r"\multicolumn{9}{l}{\textit{(C) FSLR Coordinate Selection Criterion (Fixed Budget $\rho=5\%$)}} \\",
+        r"\multicolumn{9}{l}{\textit{(C) DSR Coordinate Selection Criterion (Fixed Budget $\rho=5\%$)}} \\",
     ]
 
     is_complete = True
@@ -393,7 +393,7 @@ def main():
     output_root = Path(args.output_dir)
 
     print("=" * 80)
-    print("FedDR Main Paper Ablation Study Summary (Blocks A, B, C)")
+    print("FedRAS Main Paper Ablation Study Summary (Blocks A, B, C)")
     print(f"Source Directory: {output_root}")
     print(f"Runs Included: {args.runs}")
     print(f"Random Seeds: {args.random_seeds}")
@@ -406,7 +406,7 @@ def main():
 
     all_complete = comp_a and comp_b and comp_c
 
-    full_md = f"# FedDR Ablation Summary\n\n{md_a}\n\n{md_b}\n\n{md_c}\n"
+    full_md = f"# FedRAS Ablation Summary\n\n{md_a}\n\n{md_b}\n\n{md_c}\n"
     print(full_md)
 
     if missing_files:
@@ -427,7 +427,7 @@ def main():
             r"\centering" + "\n"
             r"\small" + "\n"
             r"\setlength{\tabcolsep}{4.5pt}" + "\n"
-            r"\caption{\textbf{Comprehensive ablation study of FedDR core components on CIFAR-100-C (severity 5).} "
+            r"\caption{\textbf{Comprehensive ablation study of FedRAS core components on CIFAR-100-C (severity 5).} "
             r"Block~(A) evaluates standardized factorial decomposition and final full configuration. "
             r"Block~(B) evaluates loss weighting formulations under fixed perturbation radius $\eta=1.2$. "
             r"Block~(C) evaluates coordinate selection criteria under fixed budget $\rho=5\%$. "
@@ -435,7 +435,7 @@ def main():
             r"\label{tab:ablation}" + "\n"
             r"\begin{tabular}{l cc cccc cc}" + "\n"
             r"\toprule" + "\n"
-            r"\textbf{Configuration / Variant} & \textbf{DLRS} & \textbf{FSLR} & \textbf{Domain} & \textbf{Cycle 1} & \textbf{Cycle 3} & $\boldsymbol{\Delta_{3-1}}$ & \textbf{Revisit} & \textbf{Clean} \\" + "\n"
+            r"\textbf{Configuration / Variant} & \textbf{RGA} & \textbf{DSR} & \textbf{Domain} & \textbf{Cycle 1} & \textbf{Cycle 3} & $\boldsymbol{\Delta_{3-1}}$ & \textbf{Revisit} & \textbf{Clean} \\" + "\n"
             r"\midrule" + "\n"
             + tex_a + "\n"
             r"\midrule" + "\n"

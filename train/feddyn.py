@@ -1,4 +1,4 @@
-"""FedDyn dynamic regularization for the FedDR supplements."""
+"""FedDyn dynamic regularization for the FedRAS supplements."""
 
 import torch
 import torch.nn.functional as F

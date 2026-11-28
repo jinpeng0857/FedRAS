@@ -52,17 +52,17 @@ def main():
     model_path, statistics_path = rooted(args.model_path), rooted(args.statistics_path)
     if args.result_path and not args.skip_run:
         raise ValueError("--result_path is an extraction source and requires --skip_run")
-    result_path = rooted(args.result_path) if args.result_path else out_dir / "cifar100c_feddr_continual.json"
+    result_path = rooted(args.result_path) if args.result_path else out_dir / "cifar100c_fedras_continual.json"
     task = build_main_task(
-        name="cifar100c_feddr_45_block",
+        name="cifar100c_fedras_45_block",
         dataset="cifar100", federated_method="fedacg",
         model_path=model_path, anchor_key="lookahead_anchor",
-        statistics_path=statistics_path, tta_method="feddr",
+        statistics_path=statistics_path, tta_method="fedras",
         corruption_path=args.cifar_c_path, clean_root=args.clean_data_root,
         device=args.device, batch_size=args.batch_size,
         num_workers=args.num_workers, seed=args.seed,
         max_batches=args.max_batches, output=result_path,
-        log=out_dir / "logs/cifar100c_feddr_45_block.log",
+        log=out_dir / "logs/cifar100c_fedras_45_block.log",
         extra_flags=protocol_flags(args),
         metadata={"dataset": "cifar100", "backbone": "resnet18",
                   "required_inputs": [str(model_path), str(statistics_path)]},
@@ -92,7 +92,7 @@ def main():
     elif not args.dry_run:
         failures = list(failures) + ["extract_45_block_curve"]
     summarize_tasks(tasks or [task], output=out_dir / "metrics.json",
-                    aliases={task.name: "CIFAR-100-C / FedDR / 45-block curve"})
+                    aliases={task.name: "CIFAR-100-C / FedRAS / 45-block curve"})
     raise_on_failures(failures)
 
 

@@ -1,4 +1,4 @@
-"""Unified entry point for the FedDR federated supplement algorithms."""
+"""Unified entry point for the FedRAS federated supplement algorithms."""
 
 from .train_fedacg import run
 

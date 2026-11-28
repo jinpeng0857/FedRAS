@@ -35,7 +35,7 @@ def configure_reasonable(args):
     args.asr_anchor_fisher_alpha = 0.
     args.asr_anchor_l2_alpha = 0.
     args.adapt_bn_scope = 'method_default'
-    args.fslr_grad_clip_norm = 0.
+    args.dsr_grad_clip_norm = 0.
     args.recap_confidence_gate = 'none'
     return args
 

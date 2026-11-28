@@ -1,10 +1,10 @@
-"""Run the FedDR experiment family under one matched CIFAR-C protocol.
+"""Run the FedRAS experiment family under one matched CIFAR-C protocol.
 
-FedDR is the primary method defined as ``DLRS + FSLR``.
-FedACG supplies the upstream federated initialization/anchor; DLRS performs
-soft joint sample/region reliability weighting, and FSLR controls long-term
+FedRAS is the primary method defined as ``RGA + DSR``.
+FedACG supplies the upstream federated initialization/anchor; RGA performs
+soft joint sample/region reliability weighting, and DSR controls long-term
 parameter drift. The primary comparison roster is Source, Tent, EATA, ASR,
-SAR, CoTTA, RoTTA, PeTTA, ReCAP, and FedDR.
+SAR, CoTTA, RoTTA, PeTTA, ReCAP, and FedRAS.
 """
 
 import argparse
@@ -32,31 +32,31 @@ from adapters import (
     ASR_OFFICIAL_R0,
     ASR_OFFICIAL_R1,
     BASE_METHODS,
-    DLRS_METHODS,
-    DLRS_REGION_SCALE_MAX,
-    DLRS_REGION_SCALE_MIN,
-    DLRS_RELIABILITY_ALPHA,
+    RGA_METHODS,
+    RGA_REGION_SCALE_MAX,
+    RGA_REGION_SCALE_MIN,
+    RGA_RELIABILITY_ALPHA,
     DUAL_RELIABILITY_METHODS,
     EATA_D_MARGIN,
     EATA_E_MARGIN_FACTOR,
     EATA_FISHER_ALPHA,
-    FEDDR_DEFINITION,
-    FEDDR_NAME,
-    FEDDR_PRIMARY_DISABLE_FSLR_RELIABILITY_GATE,
-    FEDDR_PRIMARY_NORMALIZE_BY_WEIGHT,
-    FEDDR_PRIMARY_WEIGHT_MODE,
-    FEDDR_PRIMARY_HYBRID_THRESHOLD,
-    FEDDR_PRIMARY_ANCHOR_RECTIFY_BETA,
-    FEDDR_PRIMARY_LR,
-    FEDDR_PRIMARY_BN_SCOPE,
-    FEDDR_PRIMARY_FSLR_CONTINUOUS_RISK,
-    FEDDR_PRIMARY_DLRS_VIEW_CONSISTENCY,
-    FEDDR_PRIMARY_DLRS_VIEW_ALPHA,
-    FEDDR_PRIMARY_DLRS_VIEW_JS_SCALE,
-    FEDDR_PRIMARY_FSLR_HIERARCHICAL_BUDGET,
-    FEDDR_PRIMARY_FSLR_LAYER_QUOTA_CAP,
-    FEDDR_TTA_METHOD,
-    FSLR_GRAD_CLIP_NORM,
+    FEDRAS_DEFINITION,
+    FEDRAS_NAME,
+    FEDRAS_PRIMARY_DISABLE_DSR_RELIABILITY_GATE,
+    FEDRAS_PRIMARY_NORMALIZE_BY_WEIGHT,
+    FEDRAS_PRIMARY_WEIGHT_MODE,
+    FEDRAS_PRIMARY_HYBRID_THRESHOLD,
+    FEDRAS_PRIMARY_ANCHOR_RECTIFY_BETA,
+    FEDRAS_PRIMARY_LR,
+    FEDRAS_PRIMARY_BN_SCOPE,
+    FEDRAS_PRIMARY_DSR_CONTINUOUS_RISK,
+    FEDRAS_PRIMARY_RGA_VIEW_CONSISTENCY,
+    FEDRAS_PRIMARY_RGA_VIEW_ALPHA,
+    FEDRAS_PRIMARY_RGA_VIEW_JS_SCALE,
+    FEDRAS_PRIMARY_DSR_HIERARCHICAL_BUDGET,
+    FEDRAS_PRIMARY_DSR_LAYER_QUOTA_CAP,
+    FEDRAS_TTA_METHOD,
+    DSR_GRAD_CLIP_NORM,
     L0_FACTOR,
     MARGIN_QUALITY_THRESHOLD,
     OFFICIAL_SCALE,
@@ -68,12 +68,12 @@ from adapters import (
     TTA_METHOD_LABELS,
     TTA_METHODS,
     ASRAdapter,
-    DLRSAdapter,
+    RGAAdapter,
     DisabledSparseRestorer,
     DualReliabilityAdapter,
     RegionConfidenceProxy,
-    dlrs_joint_reliability_weight,
-    dlrs_sample_reliability,
+    rga_joint_reliability_weight,
+    rga_sample_reliability,
     dual_perturbation_consistency,
     get_linear_classifier,
     prediction_js_divergence,
@@ -92,7 +92,7 @@ from evaluator import (
     build_main_adapter,
     build_transform,
     configure_bn_adaptation,
-    configure_feddr_bn_adaptation,
+    configure_fedras_bn_adaptation,
     configure_official_bn_adaptation,
     evaluate_corruption,
     evaluate_frozen,
@@ -134,11 +134,11 @@ LOGGER = logging.getLogger("main_test")
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 # Frozen main-method protocol constants
-FEDDR_PROTOCOL_BATCH_SIZE = 128
-FEDDR_PROTOCOL_LR = 1.0e-3
-FEDDR_PROTOCOL_MOMENTUM = 0.9
-FEDDR_PROTOCOL_WEIGHT_DECAY = 0.0
-FEDDR_BN_ADAPT_LR = FEDDR_PROTOCOL_LR
+FEDRAS_PROTOCOL_BATCH_SIZE = 128
+FEDRAS_PROTOCOL_LR = 1.0e-3
+FEDRAS_PROTOCOL_MOMENTUM = 0.9
+FEDRAS_PROTOCOL_WEIGHT_DECAY = 0.0
+FEDRAS_BN_ADAPT_LR = FEDRAS_PROTOCOL_LR
 
 RESTORE_DRIFT_THRESHOLDS = (0.10, 0.20, 0.35)
 RESTORE_DRIFT_RATIOS = (0.0, 0.02, 0.05, 0.10)
@@ -156,7 +156,7 @@ PRIMARY_COMPARISON_METHODS = (
     "RoTTA",
     "PeTTA",
     "ReCAP",
-    FEDDR_NAME,
+    FEDRAS_NAME,
 )
 FEDERATED_SUPPLEMENT_METHODS = (
     "fedavg",
@@ -204,12 +204,12 @@ def parse_args():
         "--tta_method",
         choices=TTA_METHODS,
         default=None,
-        help="Matched TTA comparison method. Default entry is fedras (feddr alias supported).",
+        help="Matched TTA comparison method. Default entry is fedras (fedras alias supported).",
     )
     parser.add_argument(
         "--strict_mechanism_ablation",
         action="store_true",
-        help="Use common all-BN-affine parameter scope for strict Base/DLRS/FSLR ablation.",
+        help="Use common all-BN-affine parameter scope for strict Base/RGA/DSR ablation.",
     )
     parser.add_argument(
         "--statistics_path",
@@ -223,13 +223,13 @@ def parse_args():
         "--batch_size",
         type=int,
         default=None,
-        help="Evaluation/adaptation batch size; defaults to the FedDR protocol value.",
+        help="Evaluation/adaptation batch size; defaults to the FedRAS protocol value.",
     )
     parser.add_argument(
         "--adapt_lr",
         type=float,
         default=None,
-        help="TTA adaptation learning rate; defaults to the FedDR protocol value.",
+        help="TTA adaptation learning rate; defaults to the FedRAS protocol value.",
     )
     parser.add_argument(
         "--adapt_bn_scope",
@@ -238,10 +238,10 @@ def parse_args():
         help="Override the BN affine scope for ASR/Tent/ReCAP stability checks.",
     )
     parser.add_argument(
-        "--feddr_bn_scope",
+        "--fedras_bn_scope",
         choices=["method_default", "all", "excluding_layer4", "last_two", "last_stage"],
         default="method_default",
-        help="BN affine scope for the FedDR DLRS+FSLR entrypoint.",
+        help="BN affine scope for the FedRAS RGA+DSR entrypoint.",
     )
     parser.add_argument(
         "--asr_anchor_fisher_alpha",
@@ -280,9 +280,9 @@ def parse_args():
         default=RECAP_SOFT_WEIGHT_TEMPERATURE_FACTOR,
     )
     parser.add_argument(
-        "--fslr_grad_clip_norm",
+        "--dsr_grad_clip_norm",
         type=float,
-        default=FSLR_GRAD_CLIP_NORM,
+        default=DSR_GRAD_CLIP_NORM,
     )
     parser.add_argument("--eata_e_margin_factor", type=float, default=EATA_E_MARGIN_FACTOR)
     parser.add_argument("--eata_d_margin", type=float, default=EATA_D_MARGIN)
@@ -337,28 +337,28 @@ def parse_args():
         default="sce",
     )
     parser.add_argument(
-        "--dlrs_region_scale_min",
+        "--rga_region_scale_min",
         type=float,
-        default=DLRS_REGION_SCALE_MIN,
+        default=RGA_REGION_SCALE_MIN,
     )
     parser.add_argument(
-        "--dlrs_region_scale_max",
+        "--rga_region_scale_max",
         type=float,
-        default=DLRS_REGION_SCALE_MAX,
+        default=RGA_REGION_SCALE_MAX,
     )
     parser.add_argument(
-        "--dlrs_reliability_alpha",
+        "--rga_reliability_alpha",
         type=float,
-        default=DLRS_RELIABILITY_ALPHA,
+        default=RGA_RELIABILITY_ALPHA,
     )
     parser.add_argument(
-        "--dlrs_sample_reliability_mode",
+        "--rga_sample_reliability_mode",
         choices=["full", "entropy"],
         default="full",
         help="Sample-side RGA reliability: full composite score or entropy-only.",
     )
     parser.add_argument(
-        "--dlrs_ablation_variant",
+        "--rga_ablation_variant",
         choices=[
             "full",
             "uniform_recap",
@@ -370,7 +370,7 @@ def parse_args():
         help="Mechanism-screen variant; full preserves the official RGA path.",
     )
     parser.add_argument(
-        "--dlrs_cue_ablation",
+        "--rga_cue_ablation",
         choices=[
             "full",
             "minus_entropy",
@@ -383,31 +383,31 @@ def parse_args():
         default="full",
         help=(
             "RGA cue ablation; reduced removes entropy, margin and weak-view "
-            "cues and also sends the reduced reliability signal to DSR/FSLR."
+            "cues and also sends the reduced reliability signal to DSR."
         ),
     )
-    dlrs_normalization = parser.add_mutually_exclusive_group()
-    dlrs_normalization.add_argument(
-        "--dlrs_normalize_by_weight",
+    rga_normalization = parser.add_mutually_exclusive_group()
+    rga_normalization.add_argument(
+        "--rga_normalize_by_weight",
         action="store_true",
     )
-    dlrs_normalization.add_argument(
-        "--dlrs_batch_mean",
-        dest="dlrs_normalize_by_weight",
+    rga_normalization.add_argument(
+        "--rga_batch_mean",
+        dest="rga_normalize_by_weight",
         action="store_false",
         help="Use the mean of the weighted sample losses without weight-sum rescaling.",
     )
     parser.add_argument(
-        "--dlrs_weight_mode",
+        "--rga_weight_mode",
         choices=["product", "sample_only", "region_only", "uniform"],
         default="product",
     )
     parser.add_argument(
-        "--dlrs_dual_perturbation",
+        "--rga_dual_perturbation",
         action="store_true",
     )
     parser.add_argument(
-        "--dlrs_consistency_weight",
+        "--rga_consistency_weight",
         type=float,
         default=0.5,
     )
@@ -416,7 +416,7 @@ def parse_args():
         action="store_true",
     )
     parser.add_argument(
-        "--disable_fslr_reliability_gate",
+        "--disable_dsr_reliability_gate",
         action="store_true",
     )
     parser.add_argument(
@@ -463,223 +463,223 @@ def parse_args():
         default=RESTORE_RELIABILITY_EMA_DECAY,
     )
     parser.add_argument(
-        "--dlrs_c_max",
+        "--rga_c_max",
         type=float,
         default=2.0,
         help="Maximum scale factor for Bounded Scale Normalization.",
     )
     parser.add_argument(
-        "--dlrs_hybrid_threshold",
+        "--rga_hybrid_threshold",
         type=float,
         default=0.2,
-        help="Hard-threshold below which sample reliability is zeroed out (Hybrid Soft-Hard DLRS).",
+        help="Hard-threshold below which sample reliability is zeroed out (Hybrid Soft-Hard RGA).",
     )
     parser.add_argument(
-        "--fslr_event_trigger",
+        "--dsr_event_trigger",
         action="store_true",
         default=True,
-        help="Enable sustained triple-condition event trigger for emergency FSLR.",
+        help="Enable sustained triple-condition event trigger for emergency DSR.",
     )
     parser.add_argument(
-        "--disable_fslr_event_trigger",
-        dest="fslr_event_trigger",
+        "--disable_dsr_event_trigger",
+        dest="dsr_event_trigger",
         action="store_false",
-        help="Disable sustained triple-condition event trigger for emergency FSLR.",
+        help="Disable sustained triple-condition event trigger for emergency DSR.",
     )
     parser.add_argument(
-        "--fslr_event_k",
+        "--dsr_event_k",
         type=int,
         default=3,
         help="Number of consecutive batches required to confirm an emergency event.",
     )
     parser.add_argument(
-        "--fslr_event_tau_r",
+        "--dsr_event_tau_r",
         type=float,
         default=0.40,
         help="Reliability threshold for emergency event condition.",
     )
     parser.add_argument(
-        "--fslr_event_tau_h",
+        "--dsr_event_tau_h",
         type=float,
         default=1.50,
         help="Entropy z-score drop threshold for emergency event condition.",
     )
     parser.add_argument(
-        "--fslr_event_tau_d",
+        "--dsr_event_tau_d",
         type=float,
         default=0.20,
         help="BN drift threshold for emergency event condition.",
     )
     parser.add_argument(
-        "--fslr_event_lambda_0",
+        "--dsr_event_lambda_0",
         type=float,
         default=0.50,
         help="Base emergency restore strength.",
     )
     parser.add_argument(
-        "--fslr_event_lambda_max",
+        "--dsr_event_lambda_max",
         type=float,
         default=0.90,
         help="Maximum emergency restore strength.",
     )
     parser.add_argument(
-        "--dlrs_skip_update_tau_s",
+        "--rga_skip_update_tau_s",
         type=float,
         default=0.05,
         help="Skip update threshold for sum of weights over batch size S_t / B.",
     )
     parser.add_argument(
-        "--dlrs_skip_update_tau_ess",
+        "--rga_skip_update_tau_ess",
         type=float,
         default=0.05,
         help="Skip update threshold for effective sample size ratio ESS_t / B.",
     )
     parser.add_argument(
-        "--fslr_event_tau_a",
+        "--dsr_event_tau_a",
         type=float,
         default=0.50,
         help="Lookahead anchor disagreement rate threshold for emergency event condition.",
     )
     parser.add_argument(
-        "--fslr_event_k_rho",
+        "--dsr_event_k_rho",
         type=float,
         default=2.0,
         help="Multiplier for sparse restore budget during emergency event.",
     )
     parser.add_argument(
-        "--fslr_event_rho_max",
+        "--dsr_event_rho_max",
         type=float,
         default=0.20,
         help="Maximum restore budget ratio during emergency event.",
     )
     parser.add_argument(
-        "--fslr_event_cooldown",
+        "--dsr_event_cooldown",
         type=int,
         default=20,
         help="Cooldown period in batches after an emergency event is triggered.",
     )
     parser.add_argument(
-        "--fslr_online_fisher_beta",
+        "--dsr_online_fisher_beta",
         type=float,
         default=0.0,
         help="Weight of online test-time gradient second-moment in hybrid Fisher.",
     )
     parser.add_argument(
-        "--dlrs_early_exit",
+        "--rga_early_exit",
         action="store_true",
-        help="Enable Fast-DLRS early-exit for high-confidence samples.",
+        help="Enable Fast-RGA early-exit for high-confidence samples.",
     )
     parser.add_argument(
-        "--dlrs_fast_perturbation",
+        "--rga_fast_perturbation",
         action="store_true",
-        help="Enable Fast-DLRS lightweight perturbation.",
+        help="Enable Fast-RGA lightweight perturbation.",
     )
     parser.add_argument(
-        "--dlrs_anchor_rectify_beta",
+        "--rga_anchor_rectify_beta",
         type=float,
         default=0.0,
-        help="Soft penalty factor for Lookahead Anchor disagreement in DLRS sample reliability (P3).",
+        help="Soft penalty factor for Lookahead Anchor disagreement in RGA sample reliability (P3).",
     )
     parser.add_argument(
-        "--dlrs_view_consistency",
+        "--rga_view_consistency",
         action="store_true",
         default=None,
         help="Enable Composite Multi-view Weak Perturbation Consistency (Scheme 1).",
     )
     parser.add_argument(
-        "--disable_dlrs_view_consistency",
-        dest="dlrs_view_consistency",
+        "--disable_rga_view_consistency",
+        dest="rga_view_consistency",
         action="store_false",
         help="Disable Composite Multi-view Weak Perturbation Consistency.",
     )
     parser.add_argument(
-        "--dlrs_view_alpha",
+        "--rga_view_alpha",
         type=float,
         default=None,
         help="Base confidence retention factor in weak view soft fusion.",
     )
     parser.add_argument(
-        "--dlrs_view_js_scale",
+        "--rga_view_js_scale",
         type=float,
         default=None,
         help="Scale factor for Jensen-Shannon divergence exponent in view reliability.",
     )
     parser.add_argument(
-        "--fslr_continuous_risk",
+        "--dsr_continuous_risk",
         action="store_true",
         default=None,
-        help="Enable Continuous Effective Risk budget control for FSLR (P1).",
+        help="Enable Continuous Effective Risk budget control for DSR (P1).",
     )
     parser.add_argument(
-        "--disable_fslr_continuous_risk",
-        dest="fslr_continuous_risk",
+        "--disable_dsr_continuous_risk",
+        dest="dsr_continuous_risk",
         action="store_false",
-        help="Disable Continuous Effective Risk budget control for FSLR.",
+        help="Disable Continuous Effective Risk budget control for DSR.",
     )
     parser.add_argument(
-        "--fslr_risk_rho_min",
+        "--dsr_risk_rho_min",
         type=float,
         default=0.0,
-        help="Minimum restore budget ratio for continuous risk FSLR.",
+        help="Minimum restore budget ratio for continuous risk DSR.",
     )
     parser.add_argument(
-        "--fslr_risk_rho_max",
+        "--dsr_risk_rho_max",
         type=float,
         default=0.10,
-        help="Maximum restore budget ratio for continuous risk FSLR.",
+        help="Maximum restore budget ratio for continuous risk DSR.",
     )
     parser.add_argument(
-        "--fslr_risk_gamma_anchor",
+        "--dsr_risk_gamma_anchor",
         type=float,
         default=0.50,
         help="Weight of anchor disagreement in continuous effective risk calculation.",
     )
     parser.add_argument(
-        "--fslr_risk_gamma_drift",
+        "--dsr_risk_gamma_drift",
         type=float,
         default=0.0,
         help="Weight of parameter drift in continuous effective risk calculation.",
     )
     parser.add_argument(
-        "--fslr_risk_tau_drift",
+        "--dsr_risk_tau_drift",
         type=float,
         default=0.35,
         help="Drift normalization threshold for continuous effective risk calculation.",
     )
     parser.add_argument(
-        "--fslr_hierarchical_budget",
+        "--dsr_hierarchical_budget",
         action="store_true",
         default=None,
         help="Enable Two-Stage Hierarchical Layer Risk Budget Allocation (Scheme 2).",
     )
     parser.add_argument(
-        "--disable_fslr_hierarchical_budget",
-        dest="fslr_hierarchical_budget",
+        "--disable_dsr_hierarchical_budget",
+        dest="dsr_hierarchical_budget",
         action="store_false",
         help="Disable Two-Stage Hierarchical Layer Risk Budget Allocation.",
     )
     parser.add_argument(
-        "--fslr_layer_quota_cap",
+        "--dsr_layer_quota_cap",
         type=float,
         default=None,
         help="Maximum parameter restoration fraction allowed for any individual layer.",
     )
     parser.add_argument(
-        "--fslr_momentum_discounting",
+        "--dsr_momentum_discounting",
         action="store_true",
         help="Enable Direction-Aware and Risk-Adaptive Momentum Discounting (Scheme 3).",
     )
     parser.add_argument(
-        "--fslr_selection_criterion",
+        "--dsr_selection_criterion",
         choices=["fisher_drift", "drift_only", "fisher_only", "random"],
         default="fisher_drift",
-        help="Coordinate selection criterion for FSLR ablation (Block C).",
+        help="Coordinate selection criterion for DSR ablation (Block C).",
     )
     parser.add_argument(
-        "--fslr_selection_seed",
+        "--dsr_selection_seed",
         type=int,
         default=None,
-        help="Random seed for random coordinate selection in FSLR ablation.",
+        help="Random seed for random coordinate selection in DSR ablation.",
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
@@ -693,7 +693,7 @@ def parse_args():
     parser.add_argument("--review_beta_a", type=float, default=0.3)
     parser.add_argument("--review_continual_only", action="store_true")
     args = parser.parse_args()
-    # Preserve explicit CLI overrides when the public FedDR entrypoint fills
+    # Preserve explicit CLI overrides when the public FedRAS entrypoint fills
     # in primary defaults. This is needed for controlled ablations that set
     # a primary-config field to a deliberate non-default value.
     args._explicit_cli_options = {
@@ -705,68 +705,68 @@ def parse_args():
 
 
 def apply_official_baseline_config(args):
-    """Apply the single FedDR protocol to every comparison method."""
+    """Apply the single FedRAS protocol to every comparison method."""
     if getattr(args, "batch_size", None) is None:
-        args.batch_size = FEDDR_PROTOCOL_BATCH_SIZE
+        args.batch_size = FEDRAS_PROTOCOL_BATCH_SIZE
     args.optimizer = "sgd"
     if getattr(args, "adapt_lr", None) is None:
-        args.adapt_lr = FEDDR_PROTOCOL_LR
-    args.momentum = FEDDR_PROTOCOL_MOMENTUM
-    args.weight_decay = FEDDR_PROTOCOL_WEIGHT_DECAY
+        args.adapt_lr = FEDRAS_PROTOCOL_LR
+    args.momentum = FEDRAS_PROTOCOL_MOMENTUM
+    args.weight_decay = FEDRAS_PROTOCOL_WEIGHT_DECAY
     return args
 
 
-def apply_feddr_primary_config(args, public_tta_method):
-    """Fix the public FedRAS (feddr alias) entrypoint to the retained primary configuration."""
-    if public_tta_method not in ("fedras", "feddr"):
-        if getattr(args, "dlrs_view_consistency", None) is None:
-            args.dlrs_view_consistency = False
-        if getattr(args, "dlrs_view_alpha", None) is None:
-            args.dlrs_view_alpha = 0.70
-        if getattr(args, "dlrs_view_js_scale", None) is None:
-            args.dlrs_view_js_scale = 1.0
-        if getattr(args, "fslr_continuous_risk", None) is None:
-            args.fslr_continuous_risk = False
-        if getattr(args, "fslr_hierarchical_budget", None) is None:
-            args.fslr_hierarchical_budget = False
-        if getattr(args, "fslr_layer_quota_cap", None) is None:
-            args.fslr_layer_quota_cap = 0.35
+def apply_fedras_primary_config(args, public_tta_method):
+    """Fix the public FedRAS (fedras alias) entrypoint to the retained primary configuration."""
+    if public_tta_method not in ("fedras", "fedras"):
+        if getattr(args, "rga_view_consistency", None) is None:
+            args.rga_view_consistency = False
+        if getattr(args, "rga_view_alpha", None) is None:
+            args.rga_view_alpha = 0.70
+        if getattr(args, "rga_view_js_scale", None) is None:
+            args.rga_view_js_scale = 1.0
+        if getattr(args, "dsr_continuous_risk", None) is None:
+            args.dsr_continuous_risk = False
+        if getattr(args, "dsr_hierarchical_budget", None) is None:
+            args.dsr_hierarchical_budget = False
+        if getattr(args, "dsr_layer_quota_cap", None) is None:
+            args.dsr_layer_quota_cap = 0.35
         return args
 
     if not getattr(args, "_adapt_lr_explicit", False):
-        args.adapt_lr = FEDDR_PRIMARY_LR
-    if getattr(args, "feddr_bn_scope", "method_default") == "method_default":
-        args.feddr_bn_scope = FEDDR_PRIMARY_BN_SCOPE
+        args.adapt_lr = FEDRAS_PRIMARY_LR
+    if getattr(args, "fedras_bn_scope", "method_default") == "method_default":
+        args.fedras_bn_scope = FEDRAS_PRIMARY_BN_SCOPE
 
     explicit_options = getattr(args, "_explicit_cli_options", set())
-    if "--dlrs_batch_mean" not in explicit_options:
+    if "--rga_batch_mean" not in explicit_options:
         dataset_name = str(getattr(args, "dataset", "")).lower()
         if "tiny" in dataset_name:
-            args.dlrs_normalize_by_weight = True
+            args.rga_normalize_by_weight = True
         else:
-            args.dlrs_normalize_by_weight = FEDDR_PRIMARY_NORMALIZE_BY_WEIGHT
-    if "--dlrs_weight_mode" not in explicit_options:
-        args.dlrs_weight_mode = FEDDR_PRIMARY_WEIGHT_MODE
-    args.disable_fslr_reliability_gate = (
-        FEDDR_PRIMARY_DISABLE_FSLR_RELIABILITY_GATE
+            args.rga_normalize_by_weight = FEDRAS_PRIMARY_NORMALIZE_BY_WEIGHT
+    if "--rga_weight_mode" not in explicit_options:
+        args.rga_weight_mode = FEDRAS_PRIMARY_WEIGHT_MODE
+    args.disable_dsr_reliability_gate = (
+        FEDRAS_PRIMARY_DISABLE_DSR_RELIABILITY_GATE
     )
-    if "--dlrs_hybrid_threshold" not in explicit_options:
-        args.dlrs_hybrid_threshold = FEDDR_PRIMARY_HYBRID_THRESHOLD
-    if getattr(args, "fslr_grad_clip_norm", None) is None:
-        args.fslr_grad_clip_norm = 15.0
-    args.dlrs_anchor_rectify_beta = FEDDR_PRIMARY_ANCHOR_RECTIFY_BETA
-    if getattr(args, "fslr_continuous_risk", None) is None:
-        args.fslr_continuous_risk = FEDDR_PRIMARY_FSLR_CONTINUOUS_RISK
-    if getattr(args, "dlrs_view_consistency", None) is None:
-        args.dlrs_view_consistency = FEDDR_PRIMARY_DLRS_VIEW_CONSISTENCY
-    if getattr(args, "dlrs_view_alpha", None) is None:
-        args.dlrs_view_alpha = FEDDR_PRIMARY_DLRS_VIEW_ALPHA
-    if getattr(args, "dlrs_view_js_scale", None) is None:
-        args.dlrs_view_js_scale = FEDDR_PRIMARY_DLRS_VIEW_JS_SCALE
-    if getattr(args, "fslr_hierarchical_budget", None) is None:
-        args.fslr_hierarchical_budget = FEDDR_PRIMARY_FSLR_HIERARCHICAL_BUDGET
-    if getattr(args, "fslr_layer_quota_cap", None) is None:
-        args.fslr_layer_quota_cap = FEDDR_PRIMARY_FSLR_LAYER_QUOTA_CAP
+    if "--rga_hybrid_threshold" not in explicit_options:
+        args.rga_hybrid_threshold = FEDRAS_PRIMARY_HYBRID_THRESHOLD
+    if getattr(args, "dsr_grad_clip_norm", None) is None:
+        args.dsr_grad_clip_norm = 15.0
+    args.rga_anchor_rectify_beta = FEDRAS_PRIMARY_ANCHOR_RECTIFY_BETA
+    if getattr(args, "dsr_continuous_risk", None) is None:
+        args.dsr_continuous_risk = FEDRAS_PRIMARY_DSR_CONTINUOUS_RISK
+    if getattr(args, "rga_view_consistency", None) is None:
+        args.rga_view_consistency = FEDRAS_PRIMARY_RGA_VIEW_CONSISTENCY
+    if getattr(args, "rga_view_alpha", None) is None:
+        args.rga_view_alpha = FEDRAS_PRIMARY_RGA_VIEW_ALPHA
+    if getattr(args, "rga_view_js_scale", None) is None:
+        args.rga_view_js_scale = FEDRAS_PRIMARY_RGA_VIEW_JS_SCALE
+    if getattr(args, "dsr_hierarchical_budget", None) is None:
+        args.dsr_hierarchical_budget = FEDRAS_PRIMARY_DSR_HIERARCHICAL_BUDGET
+    if getattr(args, "dsr_layer_quota_cap", None) is None:
+        args.dsr_layer_quota_cap = FEDRAS_PRIMARY_DSR_LAYER_QUOTA_CAP
     return args
 
 
@@ -775,14 +775,14 @@ def apply_cola_primary_config(args):
     if getattr(args, "public_tta_method", None) != "cola":
         return args
     if not getattr(args, "_adapt_lr_explicit", False):
-        args.adapt_lr = FEDDR_PROTOCOL_LR
+        args.adapt_lr = FEDRAS_PROTOCOL_LR
     if getattr(args, "batch_size", None) is None:
-        args.batch_size = FEDDR_PROTOCOL_BATCH_SIZE
+        args.batch_size = FEDRAS_PROTOCOL_BATCH_SIZE
     args.optimizer = "sgd"
-    args.momentum = FEDDR_PROTOCOL_MOMENTUM
+    args.momentum = FEDRAS_PROTOCOL_MOMENTUM
     # CoLA applies its paper-specified weight decay to the current domain delta
     # in a separate optimizer; the shared protocol-level value remains zero.
-    args.weight_decay = FEDDR_PROTOCOL_WEIGHT_DECAY
+    args.weight_decay = FEDRAS_PROTOCOL_WEIGHT_DECAY
     return args
 
 
@@ -818,15 +818,15 @@ def run():
     args.public_tta_method = args.tta_method
     args.tta_method = resolve_tta_method(args.public_tta_method)
     args = apply_official_baseline_config(args)
-    args = apply_feddr_primary_config(args, args.public_tta_method)
+    args = apply_fedras_primary_config(args, args.public_tta_method)
     args = apply_cola_primary_config(args)
     if args.tta_method.startswith("eata"):
         args.sample_filter = "eata"
     elif args.tta_method == "tent" or args.tta_method in BASE_METHODS:
         args.sample_filter = "all_samples"
-    elif args.tta_method in DLRS_METHODS:
-        if getattr(args, "dlrs_hybrid_threshold", None) is not None and float(args.dlrs_hybrid_threshold) > 0.0:
-            args.sample_filter = f"hybrid_soft_hard_tau{float(args.dlrs_hybrid_threshold):g}"
+    elif args.tta_method in RGA_METHODS:
+        if getattr(args, "rga_hybrid_threshold", None) is not None and float(args.rga_hybrid_threshold) > 0.0:
+            args.sample_filter = f"hybrid_soft_hard_tau{float(args.rga_hybrid_threshold):g}"
         else:
             args.sample_filter = "soft_reliability_all_samples"
     elif args.tta_method == "asr":
@@ -859,8 +859,8 @@ def run():
 
     if args.federated_method == "fedacg":
         method_name = (
-            FEDDR_NAME
-            if args.tta_method == FEDDR_TTA_METHOD
+            FEDRAS_NAME
+            if args.tta_method == FEDRAS_TTA_METHOD
             else TTA_METHOD_LABELS[args.tta_method]
         )
     else:
@@ -899,7 +899,7 @@ def run():
     is_region_method = (
         "recap" in args.tta_method
         or args.tta_method in BASE_METHODS
-        or args.tta_method in DLRS_METHODS
+        or args.tta_method in RGA_METHODS
     )
     is_base_method = args.tta_method in BASE_METHODS
 
@@ -918,7 +918,7 @@ def run():
         "method": method_name,
         "experiment_name": method_name,
         "public_tta_entrypoint": args.public_tta_method,
-        "feddr_definition": FEDDR_DEFINITION if method_name == FEDDR_NAME else None,
+        "fedras_definition": FEDRAS_DEFINITION if method_name == FEDRAS_NAME else None,
         "primary_comparison_roster": list(PRIMARY_COMPARISON_METHODS),
         "federated_supplement_roster": list(FEDERATED_SUPPLEMENT_METHODS),
         "federated_method": args.federated_method,
@@ -950,7 +950,7 @@ def run():
             "momentum": args.momentum,
             "weight_decay": args.weight_decay,
             "bn_scope": getattr(args, "adapt_bn_scope", "method_default"),
-            "feddr_bn_scope": getattr(args, "feddr_bn_scope", "method_default"),
+            "fedras_bn_scope": getattr(args, "fedras_bn_scope", "method_default"),
             "asr_anchor_fisher_alpha": getattr(
                 args, "asr_anchor_fisher_alpha", 0.0
             ),
@@ -965,11 +965,11 @@ def run():
             "recap_soft_weight_temperature_factor": getattr(
                 args, "recap_soft_weight_temperature_factor", None
             ),
-            "dlrs_sample_reliability_mode": getattr(
-                args, "dlrs_sample_reliability_mode", "full"
+            "rga_sample_reliability_mode": getattr(
+                args, "rga_sample_reliability_mode", "full"
             ),
-            "dlrs_cue_ablation": getattr(args, "dlrs_cue_ablation", "full"),
-            "dlrs_normalize_by_weight": args.dlrs_normalize_by_weight,
+            "rga_cue_ablation": getattr(args, "rga_cue_ablation", "full"),
+            "rga_normalize_by_weight": args.rga_normalize_by_weight,
             "cola_weight_margin": getattr(args, "cola_weight_margin", None),
             "cola_shift_detection_threshold": getattr(
                 args, "cola_shift_detection_threshold", None
@@ -991,20 +991,20 @@ def run():
             "cola_max_num_vectors": getattr(args, "cola_max_num_vectors", None),
         },
         "restoration": {
-            "enabled": bool(getattr(metadata, "fslr_enabled", args.tta_method.endswith("_fslr"))),
+            "enabled": bool(getattr(metadata, "dsr_enabled", args.tta_method.endswith("_dsr"))),
             "budget_mode": (
                 "continuous_risk"
-                if getattr(args, "fslr_continuous_risk", False)
+                if getattr(args, "dsr_continuous_risk", False)
                 else args.restore_budget_mode
             ),
             "interval": args.recovery_interval,
             "sparse_ratio": args.sparse_ratio,
             "restore_strength": args.restore_strength,
-            "selection_criterion": getattr(args, "fslr_selection_criterion", "fisher_drift"),
-            "selection_seed": getattr(args, "fslr_selection_seed", None),
-            "continuous_risk": bool(getattr(args, "fslr_continuous_risk", False)),
-            "hierarchical_budget": bool(getattr(args, "fslr_hierarchical_budget", False)),
-            "layer_quota_cap": getattr(args, "fslr_layer_quota_cap", None),
+            "selection_criterion": getattr(args, "dsr_selection_criterion", "fisher_drift"),
+            "selection_seed": getattr(args, "dsr_selection_seed", None),
+            "continuous_risk": bool(getattr(args, "dsr_continuous_risk", False)),
+            "hierarchical_budget": bool(getattr(args, "dsr_hierarchical_budget", False)),
+            "layer_quota_cap": getattr(args, "dsr_layer_quota_cap", None),
             "drift_thresholds": list(args.restore_drift_thresholds),
             "drift_ratios": list(args.restore_drift_ratios),
         },

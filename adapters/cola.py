@@ -9,7 +9,7 @@ formulation for the ResNet checkpoints used by FedACG.
 The adaptation objective is the official ETA/EATA entropy objective used by
 the CoLA paper.  CoLA itself only changes the parameterization of the
 normalization affine tensors and the domain-vector memory; it does not use
-labels or the FedDR/FSLR restoration machinery.
+labels or the FedRAS/DSR restoration machinery.
 """
 
 from __future__ import annotations

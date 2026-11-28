@@ -292,7 +292,7 @@ class SARAdapter(_ExternalAdapterBase):
 
 
 class RobustBatchNorm2d(nn.BatchNorm2d):
-    """RoTTA/PeTTA robust BN while retaining BatchNorm2d identity for FSLR."""
+    """RoTTA/PeTTA robust BN while retaining BatchNorm2d identity for DSR."""
 
     def __init__(self, source: nn.BatchNorm2d, momentum: float):
         super().__init__(

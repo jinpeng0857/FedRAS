@@ -1,14 +1,14 @@
-"""Unit tests for FedDR Paper Ablation Logic.
+"""Unit tests for FedRAS Paper Ablation Logic.
 
 Validates:
-  1. CLI argument parser accepts `--dlrs_weight_mode uniform`.
-  2. DLRSAdapter in uniform mode produces unit weights without errors.
+  1. CLI argument parser accepts `--rga_weight_mode uniform`.
+  2. RGAAdapter in uniform mode produces unit weights without errors.
   3. Four coordinate selection criteria produce distinct selections on synthetic drift/fisher tensors.
   4. Fixed budget mode routes through selection_criterion.
   5. Random selection criterion is reproducible with same seed and differs across seeds.
   6. Results summary parses Schema v9 JSONs and correctly converts fractions to percentages.
   7. Strict summary mode refuses incomplete LaTeX table generation.
-  8. Primary FedDR configuration activates weak-view consistency, continuous risk, hierarchical budget, and non-layer4 BN scope.
+  8. Primary FedRAS configuration activates weak-view consistency, continuous risk, hierarchical budget, and non-layer4 BN scope.
 """
 
 import copy
@@ -21,9 +21,9 @@ import unittest
 import torch
 import torch.nn as nn
 
-from adapters.dlrs import DLRSAdapter
+from adapters.rga import RGAAdapter
 from evaluator.engine import configure_bn_adaptation, validate_statistics
-from main_test import apply_feddr_primary_config, parse_args
+from main_test import apply_fedras_primary_config, parse_args
 from scripts.run_paper_ablations import validate_existing_result
 from scripts.summarize_paper_ablations import load_metrics_from_json, summarize_block_a, summarize_block_c
 from sparse_restore import PeriodicSparseRestorer
@@ -52,20 +52,20 @@ class ToyResNet(nn.Module):
 class TestPaperAblationLogic(unittest.TestCase):
 
     def test_01_cli_parser_accepts_uniform_weight_mode(self):
-        """Test that --dlrs_weight_mode accepts 'uniform'."""
+        """Test that --rga_weight_mode accepts 'uniform'."""
         test_args = [
             "--dataset", "cifar100",
             "--model_path", "dummy.pt",
             "--statistics_path", "dummy.pt",
             "--output_path", "out.json",
-            "--dlrs_weight_mode", "uniform",
+            "--rga_weight_mode", "uniform",
         ]
         import sys
         old_argv = sys.argv
         try:
             sys.argv = ["main_test.py"] + test_args
             parsed = parse_args()
-            self.assertEqual(parsed.dlrs_weight_mode, "uniform")
+            self.assertEqual(parsed.rga_weight_mode, "uniform")
         finally:
             sys.argv = old_argv
 
@@ -76,11 +76,11 @@ class TestPaperAblationLogic(unittest.TestCase):
             "--model_path", "dummy.pt",
             "--statistics_path", "dummy.pt",
             "--output_path", "out.json",
-            "--tta_method", "dlrs_fslr",
+            "--tta_method", "rga_dsr",
             "--restore_budget_mode", "fixed",
             "--sparse_ratio", "0.05",
-            "--fslr_selection_criterion", "random",
-            "--fslr_selection_seed", "42",
+            "--dsr_selection_criterion", "random",
+            "--dsr_selection_seed", "42",
         ]
         import sys
         old_argv = sys.argv
@@ -88,7 +88,7 @@ class TestPaperAblationLogic(unittest.TestCase):
             sys.argv = ["main_test.py"] + test_args
             parsed = parse_args()
             self.assertAlmostEqual(parsed.sparse_ratio, 0.05)
-            self.assertEqual(parsed.fslr_selection_seed, 42)
+            self.assertEqual(parsed.dsr_selection_seed, 42)
         finally:
             sys.argv = old_argv
 
@@ -96,7 +96,7 @@ class TestPaperAblationLogic(unittest.TestCase):
         """Schema v9 clean retention is stored under clean_retention.final_clean.accuracy."""
         payload = {
             "dataset": "cifar100",
-            "adaptation": {"tta_method": "dlrs"},
+            "adaptation": {"tta_method": "rga"},
             "domain_wise": {"summary": {"mean_accuracy": 0.5}},
             "continual": {"summary": {"cycle_summaries": [{}, {}, {}]}},
             "clean_retention": {
@@ -109,13 +109,13 @@ class TestPaperAblationLogic(unittest.TestCase):
             tf_path = Path(tf.name)
 
         try:
-            self.assertTrue(validate_existing_result(tf_path, {"tta_method": "dlrs"}))
+            self.assertTrue(validate_existing_result(tf_path, {"tta_method": "rga"}))
         finally:
             if tf_path.exists():
                 tf_path.unlink()
 
-    def test_02_dlrs_adapter_uniform_weights(self):
-        """Test that DLRSAdapter in uniform mode produces all-one joint weights."""
+    def test_02_rga_adapter_uniform_weights(self):
+        """Test that RGAAdapter in uniform mode produces all-one joint weights."""
         model = ToyResNet()
         opt = torch.optim.SGD(model.parameters(), lr=0.001)
         feature_var = torch.ones(16)
@@ -129,13 +129,13 @@ class TestPaperAblationLogic(unittest.TestCase):
             sparse_ratio=0.05,
         )
 
-        adapter = DLRSAdapter(
+        adapter = RGAAdapter(
             model=model,
             optimizer=opt,
             feature_variance=feature_var,
             restorer=restorer,
             fishers=fishers,
-            tta_method="dlrs",
+            tta_method="rga",
             weight_mode="uniform",
             hybrid_threshold=0.0,
             region_scale_min=1.2,
@@ -146,8 +146,8 @@ class TestPaperAblationLogic(unittest.TestCase):
         logits, metadata = adapter.adapt(dummy_images)
         self.assertEqual(logits.shape, (4, 10))
         self.assertTrue(metadata.get("updated"))
-        self.assertAlmostEqual(metadata.get("dlrs_joint_weight_sum"), 4.0, places=4)
-        self.assertAlmostEqual(metadata.get("dlrs_effective_sample_size"), 4.0, places=4)
+        self.assertAlmostEqual(metadata.get("rga_joint_weight_sum"), 4.0, places=4)
+        self.assertAlmostEqual(metadata.get("rga_effective_sample_size"), 4.0, places=4)
 
     def test_03_coordinate_selection_criteria_distinct(self):
         """Test that the four selection criteria produce distinct index sets on constructive inputs."""
@@ -354,37 +354,37 @@ class TestPaperAblationLogic(unittest.TestCase):
             self.assertFalse(comp)
             self.assertGreater(len(missing), 0)
 
-    def test_08_feddr_full_primary_configuration(self):
-        """Test that FedDR-Full resolves stability-oriented primary flags."""
+    def test_08_fedras_full_primary_configuration(self):
+        """Test that FedRAS-Full resolves stability-oriented primary flags."""
         class DummyArgs:
             def __init__(self):
-                self.tta_method = "feddr"
+                self.tta_method = "fedras"
                 self.strict_mechanism_ablation = False
-                self.dlrs_view_consistency = None
-                self.dlrs_view_alpha = None
-                self.dlrs_view_js_scale = None
-                self.fslr_continuous_risk = None
-                self.fslr_hierarchical_budget = None
-                self.fslr_layer_quota_cap = None
-                self.dlrs_hybrid_threshold = None
-                self.dlrs_anchor_rectify_beta = None
-                self.fslr_grad_clip_norm = None
+                self.rga_view_consistency = None
+                self.rga_view_alpha = None
+                self.rga_view_js_scale = None
+                self.dsr_continuous_risk = None
+                self.dsr_hierarchical_budget = None
+                self.dsr_layer_quota_cap = None
+                self.rga_hybrid_threshold = None
+                self.rga_anchor_rectify_beta = None
+                self.dsr_grad_clip_norm = None
                 self.batch_size = None
                 self.adapt_lr = None
-                self.feddr_bn_scope = "method_default"
+                self.fedras_bn_scope = "method_default"
 
         args = DummyArgs()
-        args = apply_feddr_primary_config(args, "feddr")
+        args = apply_fedras_primary_config(args, "fedras")
 
-        self.assertTrue(args.dlrs_view_consistency)
-        self.assertAlmostEqual(args.dlrs_view_alpha, 0.80)
-        self.assertTrue(args.fslr_continuous_risk)
-        self.assertTrue(args.fslr_hierarchical_budget)
-        self.assertAlmostEqual(args.fslr_layer_quota_cap, 0.35)
+        self.assertTrue(args.rga_view_consistency)
+        self.assertAlmostEqual(args.rga_view_alpha, 0.80)
+        self.assertTrue(args.dsr_continuous_risk)
+        self.assertTrue(args.dsr_hierarchical_budget)
+        self.assertAlmostEqual(args.dsr_layer_quota_cap, 0.35)
         self.assertAlmostEqual(args.adapt_lr, 1.0e-3)
-        self.assertEqual(args.feddr_bn_scope, "excluding_layer4")
-        self.assertAlmostEqual(args.dlrs_hybrid_threshold, 0.2)
-        self.assertAlmostEqual(args.dlrs_anchor_rectify_beta, 0.3)
+        self.assertEqual(args.fedras_bn_scope, "excluding_layer4")
+        self.assertAlmostEqual(args.rga_hybrid_threshold, 0.2)
+        self.assertAlmostEqual(args.rga_anchor_rectify_beta, 0.3)
 
         # Check parameter scope exclusion of layer4
         model = ToyResNet()

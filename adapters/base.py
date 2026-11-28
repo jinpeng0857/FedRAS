@@ -21,7 +21,7 @@ TAU_RE_FACTOR = 0.8
 L0_FACTOR = 0.7
 MARGIN_QUALITY_THRESHOLD = 0.15
 RECAP_SOFT_WEIGHT_TEMPERATURE_FACTOR = 0.10
-FSLR_GRAD_CLIP_NORM = 15.0
+DSR_GRAD_CLIP_NORM = 15.0
 EATA_E_MARGIN_FACTOR = 0.4
 EATA_D_MARGIN = 0.05
 EATA_FISHER_ALPHA = 2000.0
@@ -32,9 +32,9 @@ ASR_OFFICIAL_A0 = 0.5
 ASR_OFFICIAL_R0 = 0.5
 ASR_OFFICIAL_R1 = 20.0
 
-DLRS_REGION_SCALE_MIN = 0.6
-DLRS_REGION_SCALE_MAX = REGION_SCALE
-DLRS_RELIABILITY_ALPHA = 0.7
+RGA_REGION_SCALE_MIN = 0.6
+RGA_REGION_SCALE_MAX = REGION_SCALE
+RGA_RELIABILITY_ALPHA = 0.7
 
 DUAL_RELIABILITY_METHODS = (
     "tent",
@@ -43,31 +43,31 @@ DUAL_RELIABILITY_METHODS = (
     "recap",
     "eata_recap",
 )
-BASE_METHODS = ("base", "base_fslr")
-DLRS_METHODS = ("dlrs", "dlrs_fslr")
+BASE_METHODS = ("base", "base_dsr")
+RGA_METHODS = ("rga", "rga_dsr")
 TTA_METHODS = (
     DUAL_RELIABILITY_METHODS
     + ("sar", "cotta", "rotta", "petta", "deyo")
     + BASE_METHODS
-    + DLRS_METHODS
-    + ("cola", "feddr")
+    + RGA_METHODS
+    + ("cola", "fedras")
 )
-FEDDR_NAME = "FedDR"
-FEDDR_TTA_METHOD = "dlrs_fslr"
-FEDDR_DEFINITION = "DLRS+FSLR"
-FEDDR_PRIMARY_NORMALIZE_BY_WEIGHT = True
-FEDDR_PRIMARY_WEIGHT_MODE = "product"
-FEDDR_PRIMARY_DISABLE_FSLR_RELIABILITY_GATE = True
-FEDDR_PRIMARY_HYBRID_THRESHOLD = 0.2
-FEDDR_PRIMARY_ANCHOR_RECTIFY_BETA = 0.3
-FEDDR_PRIMARY_LR = 1.0e-3
-FEDDR_PRIMARY_BN_SCOPE = "excluding_layer4"
-FEDDR_PRIMARY_FSLR_CONTINUOUS_RISK = True
-FEDDR_PRIMARY_DLRS_VIEW_CONSISTENCY = True
-FEDDR_PRIMARY_DLRS_VIEW_ALPHA = 0.80
-FEDDR_PRIMARY_DLRS_VIEW_JS_SCALE = 1.0
-FEDDR_PRIMARY_FSLR_HIERARCHICAL_BUDGET = True
-FEDDR_PRIMARY_FSLR_LAYER_QUOTA_CAP = 0.35
+FEDRAS_NAME = "FedRAS"
+FEDRAS_TTA_METHOD = "rga_dsr"
+FEDRAS_DEFINITION = "RGA+DSR"
+FEDRAS_PRIMARY_NORMALIZE_BY_WEIGHT = True
+FEDRAS_PRIMARY_WEIGHT_MODE = "product"
+FEDRAS_PRIMARY_DISABLE_DSR_RELIABILITY_GATE = True
+FEDRAS_PRIMARY_HYBRID_THRESHOLD = 0.2
+FEDRAS_PRIMARY_ANCHOR_RECTIFY_BETA = 0.3
+FEDRAS_PRIMARY_LR = 1.0e-3
+FEDRAS_PRIMARY_BN_SCOPE = "excluding_layer4"
+FEDRAS_PRIMARY_DSR_CONTINUOUS_RISK = True
+FEDRAS_PRIMARY_RGA_VIEW_CONSISTENCY = True
+FEDRAS_PRIMARY_RGA_VIEW_ALPHA = 0.80
+FEDRAS_PRIMARY_RGA_VIEW_JS_SCALE = 1.0
+FEDRAS_PRIMARY_DSR_HIERARCHICAL_BUDGET = True
+FEDRAS_PRIMARY_DSR_LAYER_QUOTA_CAP = 0.35
 
 TTA_METHOD_LABELS = {
     "tent": "Tent",
@@ -81,20 +81,20 @@ TTA_METHOD_LABELS = {
     "recap": "ReCAP",
     "eata_recap": "EATA-ReCAP",
     "base": "Base",
-    "base_fslr": "FSLR",
-    "dlrs": "DLRS",
-    "dlrs_fslr": "DLRS+FSLR",
+    "base_dsr": "DSR",
+    "rga": "RGA",
+    "rga_dsr": "RGA+DSR",
     "cola": "ETA+CoLA",
-    "feddr": FEDDR_NAME,
+    "fedras": FEDRAS_NAME,
 }
 
 
 def resolve_tta_method(tta_method: Optional[str] = None) -> str:
     if tta_method is None:
-        raise ValueError("--tta_method is required; the primary experiment entry is feddr")
+        raise ValueError("--tta_method is required; the primary experiment entry is fedras")
     normalized = str(tta_method).strip().lower()
-    if normalized == "feddr":
-        return FEDDR_TTA_METHOD
+    if normalized == "fedras":
+        return FEDRAS_TTA_METHOD
     if normalized not in TTA_METHODS:
         raise ValueError(
             f"Unknown tta_method '{tta_method}'. Expected one of {TTA_METHODS}."

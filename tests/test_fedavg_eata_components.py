@@ -161,12 +161,12 @@ class EATASelectionTests(unittest.TestCase):
     def test_method_resolution_requires_explicit_method_and_removes_legacy_paths(self):
         with self.assertRaises(ValueError):
             resolve_tta_method()
-        self.assertEqual(resolve_tta_method("feddr"), "dlrs_fslr")
+        self.assertEqual(resolve_tta_method("fedras"), "rga_dsr")
         self.assertEqual(resolve_tta_method("recap"), "recap")
         with self.assertRaises(ValueError):
-            resolve_tta_method("recap_fslr")
+            resolve_tta_method("recap_dsr")
         with self.assertRaises(ValueError):
-            resolve_tta_method("eata_recap_fslr")
+            resolve_tta_method("eata_recap_dsr")
         self.assertEqual(resolve_tta_method("tent"), "tent")
 
     def test_tent_uses_all_samples_and_entropy_objective(self):

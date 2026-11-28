@@ -16,18 +16,18 @@ from adapters.base import (
     ASR_OFFICIAL_R0,
     ASR_OFFICIAL_R1,
     BASE_METHODS,
-    DLRS_METHODS,
+    RGA_METHODS,
     DisabledSparseRestorer,
-    FEDDR_PRIMARY_DLRS_VIEW_ALPHA,
-    FEDDR_PRIMARY_DLRS_VIEW_CONSISTENCY,
-    FEDDR_PRIMARY_DLRS_VIEW_JS_SCALE,
-    FEDDR_PRIMARY_FSLR_HIERARCHICAL_BUDGET,
-    FEDDR_PRIMARY_FSLR_LAYER_QUOTA_CAP,
+    FEDRAS_PRIMARY_RGA_VIEW_ALPHA,
+    FEDRAS_PRIMARY_RGA_VIEW_CONSISTENCY,
+    FEDRAS_PRIMARY_RGA_VIEW_JS_SCALE,
+    FEDRAS_PRIMARY_DSR_HIERARCHICAL_BUDGET,
+    FEDRAS_PRIMARY_DSR_LAYER_QUOTA_CAP,
     REWEIGHT_CAP,
     get_linear_classifier,
 )
 from adapters.dual_reliability import DualReliabilityAdapter
-from adapters.dlrs import DLRSAdapter
+from adapters.rga import RGAAdapter
 from adapters.asr import ASRAdapter
 from adapters.cola import (
     CoLAAdapter,
@@ -165,10 +165,10 @@ def configure_official_bn_adaptation(model: nn.Module):
     return params, names
 
 
-def configure_feddr_bn_adaptation(
+def configure_fedras_bn_adaptation(
     model: nn.Module, scope: str = "excluding_layer4"
 ):
-    """FedDR plasticity scope: non-layer4 BatchNorm2d affine tensors (freezing Layer 4 to eliminate gap with DeYO/SAR and reduce noise near classifier head)."""
+    """FedRAS plasticity scope: non-layer4 BatchNorm2d affine tensors (freezing Layer 4 to eliminate gap with DeYO/SAR and reduce noise near classifier head)."""
     if scope == "method_default":
         scope = "excluding_layer4"
     return configure_bn_adaptation(model, scope=scope)
@@ -275,7 +275,7 @@ def build_main_adapter(
             f"checkpoint has {num_classes} classes, expected {expected_classes}"
         )
     validate_statistics(statistics_meta, args, num_classes)
-    strict_mechanism_methods = {"base", "dlrs", "base_fslr", "dlrs_fslr"}
+    strict_mechanism_methods = {"base", "rga", "base_dsr", "rga_dsr"}
     scope_override = getattr(args, "adapt_bn_scope", "method_default")
     use_strict_mechanism_scope = (
         bool(getattr(args, "strict_mechanism_ablation", False))
@@ -308,12 +308,12 @@ def build_main_adapter(
     elif args.tta_method == "asr":
         params, param_names = configure_official_bn_adaptation(model)
         parameter_scope = "bn_affine_all"
-    elif args.tta_method in DLRS_METHODS:
-        feddr_scope = getattr(args, "feddr_bn_scope", "excluding_layer4")
-        params, param_names = configure_feddr_bn_adaptation(
-            model, scope=feddr_scope
+    elif args.tta_method in RGA_METHODS:
+        fedras_scope = getattr(args, "fedras_bn_scope", "excluding_layer4")
+        params, param_names = configure_fedras_bn_adaptation(
+            model, scope=fedras_scope
         )
-        parameter_scope = f"bn_affine_{feddr_scope}"
+        parameter_scope = f"bn_affine_{fedras_scope}"
     elif args.tta_method == "deyo":
         params, param_names = configure_deyo_model(model)
         parameter_scope = "bn_affine_excluding_layer4"
@@ -372,13 +372,13 @@ def build_main_adapter(
             weight_decay=args.weight_decay,
         )
 
-    use_fslr = args.tta_method.endswith("_fslr")
-    use_fslr_reliability_gate = (
-        use_fslr
-        and args.tta_method in DLRS_METHODS
-        and not getattr(args, "disable_fslr_reliability_gate", False)
+    use_dsr = args.tta_method.endswith("_dsr")
+    use_dsr_reliability_gate = (
+        use_dsr
+        and args.tta_method in RGA_METHODS
+        and not getattr(args, "disable_dsr_reliability_gate", False)
     )
-    if use_fslr:
+    if use_dsr:
         restorer = PeriodicSparseRestorer(
             model=model,
             optimizer=optimizer,
@@ -386,7 +386,7 @@ def build_main_adapter(
             interval=args.recovery_interval,
             sparse_ratio=getattr(args, "sparse_ratio", 0.01),
             restore_strength=args.restore_strength,
-            budget_mode=("continuous_risk" if getattr(args, "fslr_continuous_risk", False) else args.restore_budget_mode),
+            budget_mode=("continuous_risk" if getattr(args, "dsr_continuous_risk", False) else args.restore_budget_mode),
             drift_thresholds=args.restore_drift_thresholds,
             drift_ratios=args.restore_drift_ratios,
             reliability_threshold=args.restore_reliability_threshold,
@@ -394,34 +394,34 @@ def build_main_adapter(
             adam_exp_avg_decay=continual_adam_exp_avg_decay,
             adam_exp_avg_sq_decay=continual_adam_exp_avg_sq_decay,
             adam_exp_avg_sq_decay_factor=continual_adam_exp_avg_sq_decay_factor,
-            event_trigger=getattr(args, "fslr_event_trigger", False),
-            event_k=getattr(args, "fslr_event_k", 3),
-            event_tau_r=getattr(args, "fslr_event_tau_r", 0.40),
-            event_tau_a=getattr(args, "fslr_event_tau_a", 0.50),
-            event_tau_h=getattr(args, "fslr_event_tau_h", 1.50),
-            event_tau_d=getattr(args, "fslr_event_tau_d", 0.20),
-            event_lambda_0=getattr(args, "fslr_event_lambda_0", 0.50),
-            event_lambda_max=getattr(args, "fslr_event_lambda_max", 0.90),
-            event_k_rho=getattr(args, "fslr_event_k_rho", 2.0),
-            event_rho_max=getattr(args, "fslr_event_rho_max", 0.20),
-            event_cooldown=getattr(args, "fslr_event_cooldown", 20),
-            disable_reliability_gate=getattr(args, "disable_fslr_reliability_gate", False),
-            online_fisher_beta=getattr(args, "fslr_online_fisher_beta", 0.0),
-            risk_rho_min=getattr(args, "fslr_risk_rho_min", 0.0),
-            risk_rho_max=getattr(args, "fslr_risk_rho_max", 0.10),
-            risk_gamma_anchor=getattr(args, "fslr_risk_gamma_anchor", 0.50),
-            risk_gamma_drift=getattr(args, "fslr_risk_gamma_drift", 0.0),
-            risk_tau_drift=getattr(args, "fslr_risk_tau_drift", 0.35),
+            event_trigger=getattr(args, "dsr_event_trigger", False),
+            event_k=getattr(args, "dsr_event_k", 3),
+            event_tau_r=getattr(args, "dsr_event_tau_r", 0.40),
+            event_tau_a=getattr(args, "dsr_event_tau_a", 0.50),
+            event_tau_h=getattr(args, "dsr_event_tau_h", 1.50),
+            event_tau_d=getattr(args, "dsr_event_tau_d", 0.20),
+            event_lambda_0=getattr(args, "dsr_event_lambda_0", 0.50),
+            event_lambda_max=getattr(args, "dsr_event_lambda_max", 0.90),
+            event_k_rho=getattr(args, "dsr_event_k_rho", 2.0),
+            event_rho_max=getattr(args, "dsr_event_rho_max", 0.20),
+            event_cooldown=getattr(args, "dsr_event_cooldown", 20),
+            disable_reliability_gate=getattr(args, "disable_dsr_reliability_gate", False),
+            online_fisher_beta=getattr(args, "dsr_online_fisher_beta", 0.0),
+            risk_rho_min=getattr(args, "dsr_risk_rho_min", 0.0),
+            risk_rho_max=getattr(args, "dsr_risk_rho_max", 0.10),
+            risk_gamma_anchor=getattr(args, "dsr_risk_gamma_anchor", 0.50),
+            risk_gamma_drift=getattr(args, "dsr_risk_gamma_drift", 0.0),
+            risk_tau_drift=getattr(args, "dsr_risk_tau_drift", 0.35),
             hierarchical_budget=getattr(
-                args, "fslr_hierarchical_budget", FEDDR_PRIMARY_FSLR_HIERARCHICAL_BUDGET
+                args, "dsr_hierarchical_budget", FEDRAS_PRIMARY_DSR_HIERARCHICAL_BUDGET
             ),
             layer_quota_cap=getattr(
-                args, "fslr_layer_quota_cap", FEDDR_PRIMARY_FSLR_LAYER_QUOTA_CAP
+                args, "dsr_layer_quota_cap", FEDRAS_PRIMARY_DSR_LAYER_QUOTA_CAP
             ),
-            momentum_discounting=getattr(args, "fslr_momentum_discounting", False),
-            momentum_away_factor=getattr(args, "fslr_momentum_away_factor", 0.20),
-            selection_criterion=getattr(args, "fslr_selection_criterion", "fisher_drift"),
-            selection_seed=getattr(args, "fslr_selection_seed", None),
+            momentum_discounting=getattr(args, "dsr_momentum_discounting", False),
+            momentum_away_factor=getattr(args, "dsr_momentum_away_factor", 0.20),
+            selection_criterion=getattr(args, "dsr_selection_criterion", "fisher_drift"),
+            selection_seed=getattr(args, "dsr_selection_seed", None),
         )
     elif args.tta_method == "cola":
         restorer = CoLAProxyRestorer(model)
@@ -515,8 +515,8 @@ def build_main_adapter(
             anchor_fisher_alpha=getattr(args, "asr_anchor_fisher_alpha", 0.0),
             anchor_l2_alpha=getattr(args, "asr_anchor_l2_alpha", 0.0),
         )
-    elif args.tta_method in DLRS_METHODS:
-        adapter = DLRSAdapter(
+    elif args.tta_method in RGA_METHODS:
+        adapter = RGAAdapter(
             model=model,
             optimizer=optimizer,
             feature_variance=feature_variance.to(device),
@@ -526,41 +526,41 @@ def build_main_adapter(
             deyo_entropy_margin_factor=args.deyo_entropy_margin_factor,
             deyo_plpd_threshold=args.deyo_plpd_threshold,
             deyo_patch_grid=args.deyo_patch_grid,
-            region_scale_min=args.dlrs_region_scale_min,
-            region_scale_max=args.dlrs_region_scale_max,
-            reliability_alpha=args.dlrs_reliability_alpha,
+            region_scale_min=args.rga_region_scale_min,
+            region_scale_max=args.rga_region_scale_max,
+            reliability_alpha=args.rga_reliability_alpha,
             sample_reliability_mode=getattr(
-                args, "dlrs_sample_reliability_mode", "full"
+                args, "rga_sample_reliability_mode", "full"
             ),
-            normalize_by_weight=args.dlrs_normalize_by_weight,
-            c_max=getattr(args, "dlrs_c_max", 2.0),
-            skip_update_tau_s=getattr(args, "dlrs_skip_update_tau_s", 0.05),
-            skip_update_tau_ess=getattr(args, "dlrs_skip_update_tau_ess", 0.05),
-            weight_mode=args.dlrs_weight_mode,
-            dual_perturbation=getattr(args, "dlrs_dual_perturbation", False),
-            consistency_weight=getattr(args, "dlrs_consistency_weight", 0.5),
+            normalize_by_weight=args.rga_normalize_by_weight,
+            c_max=getattr(args, "rga_c_max", 2.0),
+            skip_update_tau_s=getattr(args, "rga_skip_update_tau_s", 0.05),
+            skip_update_tau_ess=getattr(args, "rga_skip_update_tau_ess", 0.05),
+            weight_mode=args.rga_weight_mode,
+            dual_perturbation=getattr(args, "rga_dual_perturbation", False),
+            consistency_weight=getattr(args, "rga_consistency_weight", 0.5),
             anchor_disagreement_diagnostic=getattr(
                 args, "anchor_disagreement_diagnostic", False
             ),
-            disable_fslr_reliability_gate=getattr(
-                args, "disable_fslr_reliability_gate", False
+            disable_dsr_reliability_gate=getattr(
+                args, "disable_dsr_reliability_gate", False
             ),
-            hybrid_threshold=getattr(args, "dlrs_hybrid_threshold", None),
-            anchor_rectify_beta=getattr(args, "dlrs_anchor_rectify_beta", 0.0),
+            hybrid_threshold=getattr(args, "rga_hybrid_threshold", None),
+            anchor_rectify_beta=getattr(args, "rga_anchor_rectify_beta", 0.0),
             view_consistency=getattr(
-                args, "dlrs_view_consistency", FEDDR_PRIMARY_DLRS_VIEW_CONSISTENCY
+                args, "rga_view_consistency", FEDRAS_PRIMARY_RGA_VIEW_CONSISTENCY
             ),
             view_alpha=getattr(
-                args, "dlrs_view_alpha", FEDDR_PRIMARY_DLRS_VIEW_ALPHA
+                args, "rga_view_alpha", FEDRAS_PRIMARY_RGA_VIEW_ALPHA
             ),
             view_js_scale=getattr(
-                args, "dlrs_view_js_scale", FEDDR_PRIMARY_DLRS_VIEW_JS_SCALE
+                args, "rga_view_js_scale", FEDRAS_PRIMARY_RGA_VIEW_JS_SCALE
             ),
             rga_ablation_variant=getattr(
-                args, "dlrs_ablation_variant", "full"
+                args, "rga_ablation_variant", "full"
             ),
             rga_cue_ablation=getattr(
-                args, "dlrs_cue_ablation", "full"
+                args, "rga_cue_ablation", "full"
             ),
         )
     else:
@@ -578,7 +578,7 @@ def build_main_adapter(
             recap_soft_weight_temperature_factor=(
                 args.recap_soft_weight_temperature_factor
             ),
-            fslr_grad_clip_norm=args.fslr_grad_clip_norm,
+            dsr_grad_clip_norm=args.dsr_grad_clip_norm,
             confidence_gate=getattr(args, "recap_confidence_gate", "none"),
             gate_margin_headroom=getattr(
                 args, "recap_gate_margin_headroom", 0.10
@@ -617,16 +617,16 @@ def build_main_adapter(
             restorer, "maximum_selected_count", 0
         ),
         "restoration_budget_mode": (
-            args.restore_budget_mode if use_fslr else "disabled"
+            args.restore_budget_mode if use_dsr else "disabled"
         ),
         "restoration_reliability_threshold": (
             args.restore_reliability_threshold
-            if use_fslr_reliability_gate
+            if use_dsr_reliability_gate
             else None
         ),
         "restoration_reliability_ema_decay": (
             args.restore_reliability_ema_decay
-            if use_fslr_reliability_gate
+            if use_dsr_reliability_gate
             else None
         ),
         "federated_method": args.federated_method,
@@ -634,19 +634,19 @@ def build_main_adapter(
         "tta_method": args.tta_method,
         "optimizer": optimizer_name,
         "sample_filter": getattr(adapter, "sample_filter", None),
-        "dlrs_sample_reliability_mode": getattr(
+        "rga_sample_reliability_mode": getattr(
             adapter, "sample_reliability_mode", None
         ),
-        "dlrs_cue_ablation": getattr(adapter, "rga_cue_ablation", "full"),
-        "dlrs_view_consistency_effective": getattr(
+        "rga_cue_ablation": getattr(adapter, "rga_cue_ablation", "full"),
+        "rga_view_consistency_effective": getattr(
             adapter, "view_consistency", None
         ),
-        "dlrs_effective_rga_cues": (
+        "rga_effective_rga_cues": (
             ["patch_shuffle_plpd", "federated_anchor", "regional_confidence"]
             if getattr(adapter, "rga_cue_ablation", "full") == "reduced"
             else None
         ),
-        "dlrs_recovery_reliability_source": (
+        "rga_recovery_reliability_source": (
             "reduced_rga_signal"
             if getattr(adapter, "rga_cue_ablation", "full") == "reduced"
             else "official_composite_signal"

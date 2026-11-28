@@ -36,13 +36,13 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     out_dir = ROOT / args.output_dir
     task = build_main_task(
-        name="cifar100c_resnet34_feddr",
+        name="cifar100c_resnet34_fedras",
         dataset="cifar100",
         federated_method="fedacg",
         model_path=rooted(args.model_path),
         anchor_key="lookahead_anchor",
         statistics_path=rooted(args.statistics_path),
-        tta_method="feddr",
+        tta_method="fedras",
         corruption_path=args.cifar_c_path,
         clean_root=args.clean_data_root,
         device=args.device,
@@ -50,8 +50,8 @@ def main():
         num_workers=args.num_workers,
         seed=args.seed,
         max_batches=args.max_batches,
-        output=out_dir / "cifar100c_resnet34_feddr.json",
-        log=out_dir / "logs/cifar100c_resnet34_feddr.log",
+        output=out_dir / "cifar100c_resnet34_fedras.json",
+        log=out_dir / "logs/cifar100c_resnet34_fedras.log",
         metadata={
             "dataset": "cifar100",
             "backbone": "resnet34",
@@ -68,7 +68,7 @@ def main():
                          force_rerun=args.force_rerun,
                          allow_missing=args.allow_missing or args.dry_run)
     summarize_tasks([task], output=out_dir / "metrics.json",
-                    aliases={task.name: "CIFAR-100-C / ResNet34 / FedDR"})
+                    aliases={task.name: "CIFAR-100-C / ResNet34 / FedRAS"})
     raise_on_failures(failures)
 
 

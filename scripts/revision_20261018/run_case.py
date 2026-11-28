@@ -88,7 +88,7 @@ def main():
                 },
                 "executed_sources": {
                     str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-                    for p in [ROOT / "main_test.py", ROOT / "evaluator/engine.py", ROOT / "evaluator/dataset.py", ROOT / "adapters/base.py", ROOT / "adapters/dlrs.py", ROOT / "sparse_restore.py", Path(__file__), ROOT / "scripts/revision_20261018/runtime.py"]
+                    for p in [ROOT / "main_test.py", ROOT / "evaluator/engine.py", ROOT / "evaluator/dataset.py", ROOT / "adapters/base.py", ROOT / "adapters/rga.py", ROOT / "sparse_restore.py", Path(__file__), ROOT / "scripts/revision_20261018/runtime.py"]
                 },
                 "corruption_root": str(Path(evaluation_args.cifar_c_path).resolve()),
                 "labels_sha256": hashlib.sha256(labels.read_bytes()).hexdigest(),
@@ -158,7 +158,7 @@ def main():
         "in_process_warmup": own.revision_warmup,
         "source_hashes": {
             str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in [ROOT / "main_test.py", ROOT / "adapters/dlrs.py", ROOT / "sparse_restore.py", ROOT / "evaluator/engine.py", *sorted((ROOT / "scripts/revision_20261018").glob("*.py"))]
+            for p in [ROOT / "main_test.py", ROOT / "adapters/rga.py", ROOT / "sparse_restore.py", ROOT / "evaluator/engine.py", *sorted((ROOT / "scripts/revision_20261018").glob("*.py"))]
         },
         "mechanism_audits": [str(args.output_path) + f".mechanism{index}.audit.json" for index in range(len(adapters))] if own.revision_controller != "native" or own.revision_schedule_record or own.revision_schedule_replay else [],
     }

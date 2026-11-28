@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Supplementary source-training algorithms for the fixed FedDR TTA protocol:
+# Supplementary source-training algorithms for the fixed FedRAS TTA protocol:
 # FedAvg, FedProx, SCAFFOLD, FedDyn, and FedAdam.  This script only creates
 # federated initialization checkpoints; it does not run TTA evaluation.
 cd "$(dirname "$0")/.."

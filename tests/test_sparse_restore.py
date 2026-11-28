@@ -1,4 +1,4 @@
-"""Targeted tests for drift-tiered, reliability-gated, layer-aware, event-triggered, and hybrid FSLR."""
+"""Targeted tests for drift-tiered, reliability-gated, layer-aware, event-triggered, and hybrid DSR."""
 
 import math
 import unittest

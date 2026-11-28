@@ -100,50 +100,50 @@ def protocol_flags(args) -> list[str]:
         "--restore_budget_mode", "drift_tiered",
         "--restore_drift_thresholds", "0.10", "0.20", "0.35",
         "--restore_drift_ratios", "0.0", "0.02", "0.05", "0.10",
-        "--fslr_grad_clip_norm", "15.0",
+        "--dsr_grad_clip_norm", "15.0",
         "--seed", str(args.seed),
         "--max_batches", str(args.max_batches),
     ]
 
 
-# This is the retained primary FedDR configuration from ``main_test.py`` and
+# This is the retained primary FedRAS configuration from ``main_test.py`` and
 # the same CIFAR-100 FedACG main runs under ``test/outputs/fedacg_run1``.  It
 # is kept here as an explicit launcher contract so component ablations cannot
 # silently fall back to the older strict-mechanism settings above.
-OFFICIAL_FEDDR_BATCH_SIZE = 128
-OFFICIAL_FEDDR_LR = "0.001"
+OFFICIAL_FEDRAS_BATCH_SIZE = 128
+OFFICIAL_FEDRAS_LR = "0.001"
 
 
 def official_protocol_flags(args) -> list[str]:
-    """Return the public main-experiment FedDR protocol as CLI flags.
+    """Return the public main-experiment FedRAS protocol as CLI flags.
 
     Ablation rows may change the public TTA method, but they inherit this
     complete set of official controls.  Keeping the values explicit is
-    intentional: argparse defaults for a non-``feddr`` method are not the
-    primary FedDR settings.
+    intentional: argparse defaults for a non-``fedras`` method are not the
+    primary FedRAS settings.
     """
     return [
-        "--adapt_lr", OFFICIAL_FEDDR_LR,
-        "--batch_size", str(OFFICIAL_FEDDR_BATCH_SIZE),
+        "--adapt_lr", OFFICIAL_FEDRAS_LR,
+        "--batch_size", str(OFFICIAL_FEDRAS_BATCH_SIZE),
         "--num_workers", str(args.num_workers),
         "--adapt_bn_scope", "excluding_layer4",
-        "--feddr_bn_scope", "excluding_layer4",
-        "--dlrs_region_scale_min", "0.6",
-        "--dlrs_region_scale_max", "1.2",
-        "--dlrs_reliability_alpha", "0.7",
-        "--dlrs_sample_reliability_mode", "full",
-        "--dlrs_normalize_by_weight",
-        "--dlrs_weight_mode", "product",
-        "--dlrs_hybrid_threshold", "0.2",
-        "--dlrs_skip_update_tau_s", "0.05",
-        "--dlrs_skip_update_tau_ess", "0.05",
-        "--dlrs_c_max", "2.0",
-        "--dlrs_consistency_weight", "0.5",
-        "--dlrs_anchor_rectify_beta", "0.3",
-        "--dlrs_view_consistency",
-        "--dlrs_view_alpha", "0.8",
-        "--dlrs_view_js_scale", "1.0",
-        "--disable_fslr_reliability_gate",
+        "--fedras_bn_scope", "excluding_layer4",
+        "--rga_region_scale_min", "0.6",
+        "--rga_region_scale_max", "1.2",
+        "--rga_reliability_alpha", "0.7",
+        "--rga_sample_reliability_mode", "full",
+        "--rga_normalize_by_weight",
+        "--rga_weight_mode", "product",
+        "--rga_hybrid_threshold", "0.2",
+        "--rga_skip_update_tau_s", "0.05",
+        "--rga_skip_update_tau_ess", "0.05",
+        "--rga_c_max", "2.0",
+        "--rga_consistency_weight", "0.5",
+        "--rga_anchor_rectify_beta", "0.3",
+        "--rga_view_consistency",
+        "--rga_view_alpha", "0.8",
+        "--rga_view_js_scale", "1.0",
+        "--disable_dsr_reliability_gate",
         "--recovery_interval", "10",
         "--restore_strength", "0.7",
         "--restore_budget_mode", "drift_tiered",
@@ -151,27 +151,27 @@ def official_protocol_flags(args) -> list[str]:
         "--restore_drift_ratios", "0.0", "0.02", "0.05", "0.10",
         "--restore_reliability_threshold", "0.55",
         "--restore_reliability_ema_decay", "0.90",
-        "--fslr_grad_clip_norm", "15.0",
-        "--fslr_event_trigger",
-        "--fslr_event_k", "3",
-        "--fslr_event_tau_r", "0.40",
-        "--fslr_event_tau_h", "1.50",
-        "--fslr_event_tau_d", "0.20",
-        "--fslr_event_lambda_0", "0.50",
-        "--fslr_event_lambda_max", "0.90",
-        "--fslr_event_tau_a", "0.50",
-        "--fslr_event_k_rho", "2.0",
-        "--fslr_event_rho_max", "0.20",
-        "--fslr_event_cooldown", "20",
-        "--fslr_continuous_risk",
-        "--fslr_risk_rho_min", "0.0",
-        "--fslr_risk_rho_max", "0.10",
-        "--fslr_risk_gamma_anchor", "0.50",
-        "--fslr_risk_gamma_drift", "0.0",
-        "--fslr_risk_tau_drift", "0.35",
-        "--fslr_hierarchical_budget",
-        "--fslr_layer_quota_cap", "0.35",
-        "--fslr_selection_criterion", "fisher_drift",
+        "--dsr_grad_clip_norm", "15.0",
+        "--dsr_event_trigger",
+        "--dsr_event_k", "3",
+        "--dsr_event_tau_r", "0.40",
+        "--dsr_event_tau_h", "1.50",
+        "--dsr_event_tau_d", "0.20",
+        "--dsr_event_lambda_0", "0.50",
+        "--dsr_event_lambda_max", "0.90",
+        "--dsr_event_tau_a", "0.50",
+        "--dsr_event_k_rho", "2.0",
+        "--dsr_event_rho_max", "0.20",
+        "--dsr_event_cooldown", "20",
+        "--dsr_continuous_risk",
+        "--dsr_risk_rho_min", "0.0",
+        "--dsr_risk_rho_max", "0.10",
+        "--dsr_risk_gamma_anchor", "0.50",
+        "--dsr_risk_gamma_drift", "0.0",
+        "--dsr_risk_tau_drift", "0.35",
+        "--dsr_hierarchical_budget",
+        "--dsr_layer_quota_cap", "0.35",
+        "--dsr_selection_criterion", "fisher_drift",
         "--seed", str(args.seed),
         "--max_batches", str(args.max_batches),
     ]
@@ -472,7 +472,7 @@ def extract_45_block_curve(result_path: Path, output_json: Path,
                 axis.axvline(boundary, color="0.65", linestyle="--", linewidth=0.8)
             axis.set(xlabel="Continual block (15 corruptions × 3 cycles)",
                      ylabel="Accuracy (%)", xlim=(1, len(rows)),
-                     title="FedDR 45-block continual accuracy")
+                     title="FedRAS 45-block continual accuracy")
             axis.grid(alpha=0.2)
             figure.tight_layout()
             plot_path.parent.mkdir(parents=True, exist_ok=True)

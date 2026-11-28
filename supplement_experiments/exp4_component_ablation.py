@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Experiment 4: Base, Base+RGA, Base+DSR, and full FedRAS ablation.
 
-This repository calls the two requested components DLRS (region/sample
-reliability, used here as RGA) and FSLR (drift-sparse restoration, used here as
+This repository calls the two requested components RGA (region/sample
+reliability, used here as RGA) and DSR (drift-sparse restoration, used here as
 DSR).  The mapping is kept explicit in the output metadata and README.
 """
 
@@ -15,22 +15,22 @@ from pathlib import Path
 try:
     from .common import (
         ROOT, add_data_args, add_runtime_args, build_main_task, preflight,
-        official_protocol_flags, OFFICIAL_FEDDR_BATCH_SIZE,
+        official_protocol_flags, OFFICIAL_FEDRAS_BATCH_SIZE,
         raise_on_failures, rooted, run_tasks, summarize_tasks,
     )
 except ImportError:
     from common import (
         ROOT, add_data_args, add_runtime_args, build_main_task, preflight,
-        official_protocol_flags, OFFICIAL_FEDDR_BATCH_SIZE,
+        official_protocol_flags, OFFICIAL_FEDRAS_BATCH_SIZE,
         raise_on_failures, rooted, run_tasks, summarize_tasks,
     )
 
 
 VARIANTS = {
     "base": ("base", "Base"),
-    "base_rga": ("dlrs", "Base+RGA (DLRS)"),
-    "base_dsr": ("base_fslr", "Base+DSR (FSLR)"),
-    "full": ("feddr", "FedRAS (FedDR)"),
+    "base_rga": ("rga", "Base+RGA"),
+    "base_dsr": ("base_dsr", "Base+DSR"),
+    "full": ("fedras", "FedRAS (FedRAS)"),
 }
 
 
@@ -45,12 +45,12 @@ def parse_args():
     )
     add_data_args(parser, dataset="cifar100", corruption_default="data/CIFAR-100-C",
                   clean_default="data")
-    add_runtime_args(parser, batch_size=OFFICIAL_FEDDR_BATCH_SIZE)
+    add_runtime_args(parser, batch_size=OFFICIAL_FEDRAS_BATCH_SIZE)
     return parser.parse_args()
 
 
 def ablation_flags(args) -> list[str]:
-    """Use the complete public main-experiment FedDR protocol."""
+    """Use the complete public main-experiment FedRAS protocol."""
     return official_protocol_flags(args)
 
 
@@ -70,7 +70,7 @@ def main():
             model_path=model_path, anchor_key="lookahead_anchor",
             statistics_path=statistics_path, tta_method=tta_method,
             corruption_path=args.cifar_c_path, clean_root=args.clean_data_root,
-            device=args.device, batch_size=OFFICIAL_FEDDR_BATCH_SIZE,
+            device=args.device, batch_size=OFFICIAL_FEDRAS_BATCH_SIZE,
             num_workers=args.num_workers, seed=args.seed,
             max_batches=args.max_batches, output=out_dir / f"{key}.json",
             log=out_dir / f"logs/{key}.log",

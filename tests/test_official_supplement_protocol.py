@@ -9,12 +9,12 @@ from supplement_experiments.exp_rga_reliability import rga_flags
 def _flag_values(flags):
     values = {}
     boolean_flags = {
-        "--dlrs_normalize_by_weight",
-        "--dlrs_view_consistency",
-        "--fslr_continuous_risk",
-        "--fslr_event_trigger",
-        "--fslr_hierarchical_budget",
-        "--disable_fslr_reliability_gate",
+        "--rga_normalize_by_weight",
+        "--rga_view_consistency",
+        "--dsr_continuous_risk",
+        "--dsr_event_trigger",
+        "--dsr_hierarchical_budget",
+        "--disable_dsr_reliability_gate",
     }
     value_counts = {
         "--restore_drift_thresholds": 3,
@@ -37,7 +37,7 @@ def _flag_values(flags):
 
 
 class OfficialSupplementProtocolTests(unittest.TestCase):
-    def test_protocol_flags_match_current_main_feddr_protocol(self):
+    def test_protocol_flags_match_current_main_fedras_protocol(self):
         flags = official_protocol_flags(
             SimpleNamespace(num_workers=2, seed=0, max_batches=-1)
         )
@@ -45,31 +45,31 @@ class OfficialSupplementProtocolTests(unittest.TestCase):
 
         self.assertEqual(values["--adapt_lr"], "0.001")
         self.assertEqual(values["--batch_size"], "128")
-        self.assertEqual(values["--feddr_bn_scope"], "excluding_layer4")
+        self.assertEqual(values["--fedras_bn_scope"], "excluding_layer4")
         self.assertEqual(values["--restore_strength"], "0.7")
-        self.assertEqual(values["--dlrs_region_scale_min"], "0.6")
-        self.assertEqual(values["--dlrs_region_scale_max"], "1.2")
-        self.assertEqual(values["--dlrs_hybrid_threshold"], "0.2")
-        self.assertEqual(values["--fslr_grad_clip_norm"], "15.0")
-        self.assertTrue(values["--dlrs_normalize_by_weight"])
-        self.assertTrue(values["--dlrs_view_consistency"])
-        self.assertTrue(values["--fslr_continuous_risk"])
-        self.assertTrue(values["--fslr_event_trigger"])
-        self.assertTrue(values["--fslr_hierarchical_budget"])
+        self.assertEqual(values["--rga_region_scale_min"], "0.6")
+        self.assertEqual(values["--rga_region_scale_max"], "1.2")
+        self.assertEqual(values["--rga_hybrid_threshold"], "0.2")
+        self.assertEqual(values["--dsr_grad_clip_norm"], "15.0")
+        self.assertTrue(values["--rga_normalize_by_weight"])
+        self.assertTrue(values["--rga_view_consistency"])
+        self.assertTrue(values["--dsr_continuous_risk"])
+        self.assertTrue(values["--dsr_event_trigger"])
+        self.assertTrue(values["--dsr_hierarchical_budget"])
 
-    def test_component_ablation_uses_public_feddr_entry_and_official_controls(self):
-        self.assertEqual(VARIANTS["full"][0], "feddr")
+    def test_component_ablation_uses_public_fedras_entry_and_official_controls(self):
+        self.assertEqual(VARIANTS["full"][0], "fedras")
         flags = ablation_flags(
             SimpleNamespace(num_workers=2, seed=0, max_batches=-1)
         )
         self.assertNotIn("--strict_mechanism_ablation", flags)
-        self.assertNotIn("--disable_fslr_event_trigger", flags)
-        self.assertNotIn("--disable_fslr_continuous_risk", flags)
-        self.assertNotIn("--disable_fslr_hierarchical_budget", flags)
+        self.assertNotIn("--disable_dsr_event_trigger", flags)
+        self.assertNotIn("--disable_dsr_continuous_risk", flags)
+        self.assertNotIn("--disable_dsr_hierarchical_budget", flags)
         values = _flag_values(flags)
         self.assertEqual(values["--adapt_lr"], "0.001")
         self.assertEqual(values["--batch_size"], "128")
-        self.assertEqual(values["--fslr_grad_clip_norm"], "15.0")
+        self.assertEqual(values["--dsr_grad_clip_norm"], "15.0")
 
     def test_rga_validity_rows_keep_official_controls(self):
         flags = rga_flags(
@@ -81,13 +81,13 @@ class OfficialSupplementProtocolTests(unittest.TestCase):
         values = _flag_values(flags)
         self.assertEqual(values["--adapt_lr"], "0.001")
         self.assertEqual(values["--batch_size"], "128")
-        self.assertEqual(values["--dlrs_region_scale_min"], "0.6")
-        self.assertEqual(values["--dlrs_region_scale_max"], "1.2")
-        self.assertEqual(values["--dlrs_hybrid_threshold"], "0.2")
-        self.assertEqual(values["--dlrs_weight_mode"], "sample_only")
-        self.assertEqual(values["--dlrs_sample_reliability_mode"], "entropy")
-        self.assertTrue(values["--dlrs_view_consistency"])
-        self.assertTrue(values["--fslr_continuous_risk"])
+        self.assertEqual(values["--rga_region_scale_min"], "0.6")
+        self.assertEqual(values["--rga_region_scale_max"], "1.2")
+        self.assertEqual(values["--rga_hybrid_threshold"], "0.2")
+        self.assertEqual(values["--rga_weight_mode"], "sample_only")
+        self.assertEqual(values["--rga_sample_reliability_mode"], "entropy")
+        self.assertTrue(values["--rga_view_consistency"])
+        self.assertTrue(values["--dsr_continuous_risk"])
 
 
 if __name__ == "__main__":

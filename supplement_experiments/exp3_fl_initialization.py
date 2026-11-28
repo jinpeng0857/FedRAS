@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Experiment 3: keep the deployment adapter fixed while changing FL initialization.
 
-The canonical repository name is ``FedDR`` (DLRS+FSLR).  The requested paper
+The canonical repository name is ``FedRAS`` (RGA+DSR).  The requested paper
 label ``FedRAS`` is emitted as an alias in the summary, never passed to the
 core evaluator.
 """
@@ -89,7 +89,7 @@ def main():
             metadata={"dataset": "cifar100", "backbone": "resnet18",
                       "required_inputs": [str(model_path)]},
         ))
-        for tta_method, label in (("asr", "asr"), ("recap", "recap"), ("feddr", "feddr")):
+        for tta_method, label in (("asr", "asr"), ("recap", "recap"), ("fedras", "fedras")):
             tasks.append(build_main_task(
                 name=f"{prefix}_{label}", dataset="cifar100",
                 federated_method=federated_method, model_path=model_path,
@@ -124,7 +124,7 @@ def main():
     for task in tasks:
         method, label = task.name.split("_", 1)
         display_method = method.upper() if method != "fedacg" else "FedACG"
-        display_label = "FedRAS (FedDR)" if label == "feddr" else label.upper()
+        display_label = "FedRAS (FedRAS)" if label == "fedras" else label.upper()
         aliases[task.name] = f"{display_method}+{display_label}"
     summarize_tasks(tasks, output=out_dir / "metrics.json", aliases=aliases)
     raise_on_failures(failures)

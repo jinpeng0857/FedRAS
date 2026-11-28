@@ -1,4 +1,4 @@
-"""DLRS (Dynamic Local Reliability Scaling) adapter with Bounded Normalization, Skip-Update Protection, and Anchor Disagreement."""
+"""RGA (Dynamic Local Reliability Scaling) adapter with Bounded Normalization, Skip-Update Protection, and Anchor Disagreement."""
 
 from copy import deepcopy
 import math
@@ -11,11 +11,11 @@ from torch import nn
 from sparse_restore import PeriodicSparseRestorer
 from tests.tta_baselines import DeYOAdapter
 from adapters.base import (
-    DLRS_METHODS,
-    DLRS_REGION_SCALE_MAX,
-    DLRS_REGION_SCALE_MIN,
-    DLRS_RELIABILITY_ALPHA,
-    FSLR_GRAD_CLIP_NORM,
+    RGA_METHODS,
+    RGA_REGION_SCALE_MAX,
+    RGA_REGION_SCALE_MIN,
+    RGA_RELIABILITY_ALPHA,
+    DSR_GRAD_CLIP_NORM,
     REGION_SCALE,
 )
 from adapters.dual_reliability import (
@@ -80,7 +80,7 @@ def dual_perturbation_consistency(
     return 0.5 * (distribution_consistency + label_consistency)
 
 
-def dlrs_sample_reliability(
+def rga_sample_reliability(
     prediction_entropy: torch.Tensor,
     plpd: torch.Tensor,
     probability: torch.Tensor,
@@ -89,7 +89,7 @@ def dlrs_sample_reliability(
     hybrid_threshold: Optional[float] = None,
     cue_ablation: str = "full",
 ):
-    """Detached DLRS reliability from entropy, PLPD, and class margin.
+    """Detached RGA reliability from entropy, PLPD, and class margin.
 
     Entropy and PLPD form the DeYO-derived sample score. The Top-1/Top-2
     probability margin explicitly represents distance from a decision boundary.
@@ -165,7 +165,7 @@ def dlrs_sample_reliability(
     return reliability, prediction_margin
 
 
-def dlrs_joint_reliability_weight(
+def rga_joint_reliability_weight(
     sample_reliability: torch.Tensor,
     regional_reliability: torch.Tensor,
 ):
@@ -184,11 +184,11 @@ def dlrs_joint_reliability_weight(
         or (detached_sample_reliability < 0).any()
         or (regional_reliability < 0).any()
     ):
-        raise ValueError("DLRS reliability weights must be finite and non-negative")
+        raise ValueError("RGA reliability weights must be finite and non-negative")
     return detached_sample_reliability * regional_reliability
 
 
-class DLRSAdapter(DualReliabilityAdapter):
+class RGAAdapter(DualReliabilityAdapter):
     """Soft sample reliability with reliability-controlled ReCAP regions.
 
     Entropy, PLPD, and the Top-1/Top-2 prediction margin form a continuous
@@ -204,13 +204,13 @@ class DLRSAdapter(DualReliabilityAdapter):
         feature_variance: torch.Tensor,
         restorer: PeriodicSparseRestorer,
         fishers,
-        tta_method: str = "dlrs",
+        tta_method: str = "rga",
         deyo_entropy_margin_factor: float = 0.5,
         deyo_plpd_threshold: float = 0.2,
         deyo_patch_grid: int = 4,
-        region_scale_min: float = DLRS_REGION_SCALE_MIN,
-        region_scale_max: float = DLRS_REGION_SCALE_MAX,
-        reliability_alpha: float = DLRS_RELIABILITY_ALPHA,
+        region_scale_min: float = RGA_REGION_SCALE_MIN,
+        region_scale_max: float = RGA_REGION_SCALE_MAX,
+        reliability_alpha: float = RGA_RELIABILITY_ALPHA,
         sample_reliability_mode: str = "full",
         normalize_by_weight: bool = False,
         c_max: float = 2.0,
@@ -220,8 +220,8 @@ class DLRSAdapter(DualReliabilityAdapter):
         dual_perturbation: bool = False,
         consistency_weight: float = 0.5,
         anchor_disagreement_diagnostic: bool = False,
-        disable_fslr_reliability_gate: bool = False,
-        fslr_grad_clip_norm: float = FSLR_GRAD_CLIP_NORM,
+        disable_dsr_reliability_gate: bool = False,
+        dsr_grad_clip_norm: float = DSR_GRAD_CLIP_NORM,
         early_exit_enabled: bool = False,
         early_exit_margin_threshold: float = 0.80,
         fast_perturbation: bool = False,
@@ -233,9 +233,9 @@ class DLRSAdapter(DualReliabilityAdapter):
         rga_ablation_variant: str = "full",
         rga_cue_ablation: str = "full",
     ):
-        if tta_method not in DLRS_METHODS:
+        if tta_method not in RGA_METHODS:
             raise ValueError(
-                f"DLRSAdapter requires one of {DLRS_METHODS}, got {tta_method}"
+                f"RGAAdapter requires one of {RGA_METHODS}, got {tta_method}"
             )
         super().__init__(
             model=model,
@@ -244,7 +244,7 @@ class DLRSAdapter(DualReliabilityAdapter):
             restorer=restorer,
             fishers=fishers,
             tta_method=tta_method,
-            fslr_grad_clip_norm=fslr_grad_clip_norm,
+            dsr_grad_clip_norm=dsr_grad_clip_norm,
         )
         self.hybrid_threshold = hybrid_threshold
         if self.hybrid_threshold is not None and float(self.hybrid_threshold) > 0.0:
@@ -275,8 +275,8 @@ class DLRSAdapter(DualReliabilityAdapter):
         self.anchor_disagreement_diagnostic = bool(
             anchor_disagreement_diagnostic
         )
-        self.disable_fslr_reliability_gate = bool(
-            disable_fslr_reliability_gate
+        self.disable_dsr_reliability_gate = bool(
+            disable_dsr_reliability_gate
         )
         self.early_exit_enabled = bool(early_exit_enabled)
         self.early_exit_margin_threshold = float(early_exit_margin_threshold)
@@ -321,7 +321,7 @@ class DLRSAdapter(DualReliabilityAdapter):
         if self.c_max < 1.0:
             raise ValueError("c_max must be >= 1.0")
         if self.weight_mode not in ("product", "sample_only", "region_only", "uniform"):
-            raise ValueError(f"unsupported DLRS weight mode: {self.weight_mode}")
+            raise ValueError(f"unsupported RGA weight mode: {self.weight_mode}")
         if (
             not math.isfinite(self.consistency_weight)
             or not 0.0 <= self.consistency_weight <= 1.0
@@ -362,7 +362,7 @@ class DLRSAdapter(DualReliabilityAdapter):
             )
             or self.rga_ablation_variant in {"anchor_only", "regional_anchor"}
             or self.anchor_disagreement_diagnostic
-            or (self.use_fslr and getattr(self.restorer, "event_trigger", False))
+            or (self.use_dsr and getattr(self.restorer, "event_trigger", False))
         )
         if self.needs_anchor:
             self.anchor_model = deepcopy(model)
@@ -375,13 +375,13 @@ class DLRSAdapter(DualReliabilityAdapter):
             {
                 "deyo_entropy_passed": 0,
                 "plpd_passed": 0,
-                "dlrs_selected": 0,
-                "dlrs_reliability_sum": 0.0,
-                "dlrs_region_scale_sum": 0.0,
-                "dlrs_reliability_count": 0,
-                "dlrs_joint_weight_sum": 0.0,
-                "dlrs_joint_weight_square_sum": 0.0,
-                "dlrs_joint_weight_count": 0,
+                "rga_selected": 0,
+                "rga_reliability_sum": 0.0,
+                "rga_region_scale_sum": 0.0,
+                "rga_reliability_count": 0,
+                "rga_joint_weight_sum": 0.0,
+                "rga_joint_weight_square_sum": 0.0,
+                "rga_joint_weight_count": 0,
                 "effective_sample_size_sum": 0.0,
                 "effective_sample_size_batches": 0,
                 "recovery_credit_sum": 0.0,
@@ -424,7 +424,7 @@ class DLRSAdapter(DualReliabilityAdapter):
                 disagree_vector = current_prediction.ne(anchor_prediction)
                 anchor_disagreement_tensor = disagree_vector.float().mean()
 
-        # Fast-DLRS Early Exit for high-confidence samples
+        # Fast-RGA Early Exit for high-confidence samples
         early_exit_mask = None
         if self.early_exit_enabled:
             early_exit_mask = (
@@ -436,7 +436,7 @@ class DLRSAdapter(DualReliabilityAdapter):
             self.rga_cue_ablation == "reduced"
             or (
                 self.sample_reliability_mode != "entropy"
-                and (self.use_fslr or self.rga_ablation_variant == "full")
+                and (self.use_dsr or self.rga_ablation_variant == "full")
             )
         )
         if needs_plpd:
@@ -476,7 +476,7 @@ class DLRSAdapter(DualReliabilityAdapter):
 
         def _base_sample_reliability(cue_ablation: str):
             if cue_ablation == "reduced":
-                reliability, _ = dlrs_sample_reliability(
+                reliability, _ = rga_sample_reliability(
                     prediction_entropy=prediction_entropy,
                     plpd=plpd,
                     probability=probability,
@@ -495,7 +495,7 @@ class DLRSAdapter(DualReliabilityAdapter):
                         / math.log(float(self.proxy.num_classes))
                     ).clamp(0.0, 1.0)
             else:
-                reliability, _ = dlrs_sample_reliability(
+                reliability, _ = rga_sample_reliability(
                     prediction_entropy=prediction_entropy,
                     plpd=plpd,
                     probability=probability,
@@ -512,8 +512,8 @@ class DLRSAdapter(DualReliabilityAdapter):
             return reliability
 
         # Single-cue diagnostic rows preserve the official full signal for
-        # DSR/FSLR. The integrated reduced mechanism sends its own reliability
-        # signal to both RGA and DSR/FSLR.
+        # DSR. The integrated reduced mechanism sends its own reliability
+        # signal to both RGA and DSR.
         integrated_reduced = self.rga_cue_ablation == "reduced"
         if integrated_reduced:
             reduced_sample_reliability = _base_sample_reliability("reduced")
@@ -579,35 +579,35 @@ class DLRSAdapter(DualReliabilityAdapter):
             self.counters["early_exit_samples"] += int(early_exit_mask.sum().item())
 
         if self.rga_ablation_variant == "full":
-            rga_sample_reliability = rga_cue_reliability
+            active_sample_reliability = rga_cue_reliability
         elif self.rga_ablation_variant in {"anchor_only", "regional_anchor"}:
             if disagree_vector is None:
                 raise RuntimeError(
                     "anchor-based RGA variants require a frozen anchor model"
                 )
-            rga_sample_reliability = (
+            active_sample_reliability = (
                 1.0 - self.anchor_rectify_beta * disagree_vector.float()
             ).clamp(0.0, 1.0)
         else:
-            rga_sample_reliability = torch.ones_like(sample_reliability)
+            active_sample_reliability = torch.ones_like(sample_reliability)
 
         if self.rga_ablation_variant != "full":
             # Keep the ReCAP region scale fixed for the simplified rows so that
             # their only RGA factors are the explicitly named sample weights.
             adaptive_region_scale = torch.full_like(
-                rga_sample_reliability, REGION_SCALE
+                active_sample_reliability, REGION_SCALE
             )
         elif self.region_scale_min == self.region_scale_max:
             adaptive_region_scale = torch.full_like(
-                rga_sample_reliability, self.region_scale_max
+                active_sample_reliability, self.region_scale_max
             )
         elif self.weight_mode == "product":
             adaptive_region_scale = self.region_scale_min + (
                 self.region_scale_max - self.region_scale_min
-            ) * rga_sample_reliability
+            ) * active_sample_reliability
         else:
             adaptive_region_scale = torch.full_like(
-                rga_sample_reliability, REGION_SCALE
+                active_sample_reliability, REGION_SCALE
             )
         regional_entropy, regional_instability = self.proxy(
             logits,
@@ -615,7 +615,7 @@ class DLRSAdapter(DualReliabilityAdapter):
         )
         region_mask = regional_entropy.detach() < self.tau_re
         if self.rga_ablation_variant in {"uniform_recap", "anchor_only"}:
-            regional_soft_weight = torch.ones_like(rga_sample_reliability)
+            regional_soft_weight = torch.ones_like(active_sample_reliability)
         elif self.weight_mode in ("sample_only", "uniform"):
             regional_soft_weight = torch.ones_like(sample_reliability)
         else:
@@ -628,7 +628,7 @@ class DLRSAdapter(DualReliabilityAdapter):
             selected_mask = torch.ones_like(entropy_mask, dtype=torch.bool)
             selected_indices = torch.arange(images.size(0), device=images.device)
         elif self.hybrid_threshold is not None and self.hybrid_threshold > 0:
-            selected_mask = rga_sample_reliability > 0.0
+            selected_mask = active_sample_reliability > 0.0
             selected_indices = selected_mask.nonzero(as_tuple=False).flatten()
         else:
             selected_mask = torch.ones_like(entropy_mask, dtype=torch.bool)
@@ -644,7 +644,7 @@ class DLRSAdapter(DualReliabilityAdapter):
         selected_soft_weights = regional_soft_weight.index_select(
             0, selected_indices
         )
-        selected_reliability = rga_sample_reliability.index_select(
+        selected_reliability = active_sample_reliability.index_select(
             0, selected_indices
         )
         if self.rga_ablation_variant == "uniform_recap":
@@ -655,7 +655,7 @@ class DLRSAdapter(DualReliabilityAdapter):
             if self.rga_ablation_variant == "anchor_only":
                 selected_joint_weights = selected_reliability
             else:
-                selected_joint_weights = dlrs_joint_reliability_weight(
+                selected_joint_weights = rga_joint_reliability_weight(
                     selected_reliability,
                     selected_soft_weights,
                 )
@@ -666,12 +666,12 @@ class DLRSAdapter(DualReliabilityAdapter):
         elif self.weight_mode == "region_only":
             selected_joint_weights = selected_soft_weights
         elif self.weight_mode == "product":
-            selected_joint_weights = dlrs_joint_reliability_weight(
+            selected_joint_weights = rga_joint_reliability_weight(
                 selected_reliability,
                 selected_soft_weights,
             )
         else:
-            raise ValueError(f"unsupported DLRS weight mode: {self.weight_mode}")
+            raise ValueError(f"unsupported RGA weight mode: {self.weight_mode}")
         selected_region_scale = adaptive_region_scale.index_select(
             0, selected_indices
         )
@@ -730,10 +730,10 @@ class DLRSAdapter(DualReliabilityAdapter):
                 loss_value = float(recap_loss.detach().cpu())
                 recap_loss_value = loss_value
                 recap_loss.backward()
-                if self.fslr_grad_clip_norm is not None:
+                if self.dsr_grad_clip_norm is not None:
                     gradient_norm_tensor = torch.nn.utils.clip_grad_norm_(
                         self._trainable_parameters,
-                        max_norm=self.fslr_grad_clip_norm,
+                        max_norm=self.dsr_grad_clip_norm,
                         error_if_nonfinite=False,
                     )
                     gradient_norm_before_clip = float(
@@ -742,9 +742,9 @@ class DLRSAdapter(DualReliabilityAdapter):
                     if math.isfinite(gradient_norm_before_clip):
                         gradient_clipped = (
                             gradient_norm_before_clip
-                            > self.fslr_grad_clip_norm
+                            > self.dsr_grad_clip_norm
                         )
-                        if self.use_fslr:
+                        if self.use_dsr:
                             is_healthy = (
                                 (recovery_credit >= getattr(self.restorer, "event_tau_r", 0.40))
                                 and (anchor_disagreement is None or anchor_disagreement <= getattr(self.restorer, "event_tau_a", 0.50))
@@ -766,7 +766,7 @@ class DLRSAdapter(DualReliabilityAdapter):
                             torch.stack(gradient_squares).sum()
                         ).cpu()
                     ) if gradient_squares else 0.0
-                    if self.use_fslr:
+                    if self.use_dsr:
                         is_healthy = (
                             (recovery_credit >= getattr(self.restorer, "event_tau_r", 0.40))
                             and (anchor_disagreement is None or anchor_disagreement <= getattr(self.restorer, "event_tau_a", 0.50))
@@ -780,7 +780,7 @@ class DLRSAdapter(DualReliabilityAdapter):
         elif should_skip_update:
             self.counters["skipped_low_quality_batches"] += 1
 
-        if self.use_fslr:
+        if self.use_dsr:
             recovered = self.restorer.step(
                 reliability=recovery_credit,
                 entropy=marginal_entropy,
@@ -850,7 +850,7 @@ class DLRSAdapter(DualReliabilityAdapter):
         # The evaluator consumes these transient vectors to verify whether
         # RGA assigns lower update weight to incorrect predictions. They are
         # intentionally kept out of the serialized result payload.
-        rga_joint_weight_vector = torch.zeros_like(rga_sample_reliability)
+        rga_joint_weight_vector = torch.zeros_like(active_sample_reliability)
         rga_joint_weight_vector[selected_indices] = selected_joint_weight_values
         rga_applied_weight_vector = (
             rga_joint_weight_vector
@@ -884,19 +884,19 @@ class DLRSAdapter(DualReliabilityAdapter):
             "recap_soft_weight_count": int(selected_weight_values.numel()),
             "recap_soft_weight_min": weight_min,
             "recap_soft_weight_max": weight_max,
-            "dlrs_reliability_min": reliability_min,
-            "dlrs_reliability_max": reliability_max,
-            "dlrs_reliability_sum": float(post_vals[8]),
-            "dlrs_reliability_count": int(selected_reliability.numel()),
-            "dlrs_region_scale_min": region_scale_min,
-            "dlrs_region_scale_max": region_scale_max,
-            "dlrs_region_scale_sum": float(post_vals[9]),
-            "dlrs_joint_weight_min": joint_weight_min,
-            "dlrs_joint_weight_max": joint_weight_max,
-            "dlrs_joint_weight_sum": joint_weight_sum_val,
-            "dlrs_joint_weight_square_sum": joint_weight_square_sum,
-            "dlrs_joint_weight_count": int(selected_joint_weight_values.numel()),
-            "dlrs_effective_sample_size": effective_sample_size,
+            "rga_reliability_min": reliability_min,
+            "rga_reliability_max": reliability_max,
+            "rga_reliability_sum": float(post_vals[8]),
+            "rga_reliability_count": int(selected_reliability.numel()),
+            "rga_region_scale_min": region_scale_min,
+            "rga_region_scale_max": region_scale_max,
+            "rga_region_scale_sum": float(post_vals[9]),
+            "rga_joint_weight_min": joint_weight_min,
+            "rga_joint_weight_max": joint_weight_max,
+            "rga_joint_weight_sum": joint_weight_sum_val,
+            "rga_joint_weight_square_sum": joint_weight_square_sum,
+            "rga_joint_weight_count": int(selected_joint_weight_values.numel()),
+            "rga_effective_sample_size": effective_sample_size,
             "gradient_norm_before_clip": gradient_norm_before_clip,
             "gradient_clipped": bool(gradient_clipped),
             "nonfinite_gradient": bool(nonfinite_gradient),
@@ -909,8 +909,8 @@ class DLRSAdapter(DualReliabilityAdapter):
             "recovery_credit": recovery_credit,
             "recovery_threshold": recovery_threshold,
             "recovery_authorized": recovery_authorized,
-            "fslr_reliability_gate_disabled": (
-                self.disable_fslr_reliability_gate
+            "dsr_reliability_gate_disabled": (
+                self.disable_dsr_reliability_gate
             ),
             "rga_joint_weight_vector": rga_joint_weight_vector.detach(),
             "rga_applied_weight_vector": rga_applied_weight_vector.detach(),
@@ -927,7 +927,7 @@ class DLRSAdapter(DualReliabilityAdapter):
         self.counters["nonredundant"] += batch_stats["nonredundant"]
         self.counters["region_reliable"] += batch_stats["region_reliable"]
         self.counters["selected"] += batch_stats["selected"]
-        self.counters["dlrs_selected"] += batch_stats["selected"]
+        self.counters["rga_selected"] += batch_stats["selected"]
         self.counters["recap_soft_weight_sum"] += batch_stats[
             "recap_soft_weight_sum"
         ]
@@ -937,27 +937,27 @@ class DLRSAdapter(DualReliabilityAdapter):
         self.counters["recap_soft_weight_count"] += batch_stats[
             "recap_soft_weight_count"
         ]
-        self.counters["dlrs_reliability_sum"] += batch_stats[
-            "dlrs_reliability_sum"
+        self.counters["rga_reliability_sum"] += batch_stats[
+            "rga_reliability_sum"
         ]
-        self.counters["dlrs_region_scale_sum"] += batch_stats[
-            "dlrs_region_scale_sum"
+        self.counters["rga_region_scale_sum"] += batch_stats[
+            "rga_region_scale_sum"
         ]
-        self.counters["dlrs_reliability_count"] += batch_stats[
-            "dlrs_reliability_count"
+        self.counters["rga_reliability_count"] += batch_stats[
+            "rga_reliability_count"
         ]
-        self.counters["dlrs_joint_weight_sum"] += batch_stats[
-            "dlrs_joint_weight_sum"
+        self.counters["rga_joint_weight_sum"] += batch_stats[
+            "rga_joint_weight_sum"
         ]
-        self.counters["dlrs_joint_weight_square_sum"] += batch_stats[
-            "dlrs_joint_weight_square_sum"
+        self.counters["rga_joint_weight_square_sum"] += batch_stats[
+            "rga_joint_weight_square_sum"
         ]
-        self.counters["dlrs_joint_weight_count"] += batch_stats[
-            "dlrs_joint_weight_count"
+        self.counters["rga_joint_weight_count"] += batch_stats[
+            "rga_joint_weight_count"
         ]
         self.counters["recovery_credit_sum"] += recovery_credit
         self.counters["recovery_credit_count"] += 1
-        self.counters["effective_sample_size_sum"] += batch_stats["dlrs_effective_sample_size"]
+        self.counters["effective_sample_size_sum"] += batch_stats["rga_effective_sample_size"]
         self.counters["effective_sample_size_batches"] += 1
         if should_skip_update:
             self.counters["skipped_low_quality_batches"] += 1
